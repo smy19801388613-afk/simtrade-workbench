@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 
+from live_platform import archive_origins
 from pipeline import accounts_for, read
 from results import summarize
 from trade_modes import AUTOMATIC_PAIRS, PAYMENTS, TERMS
@@ -96,14 +97,14 @@ def _audit(data, base, accounts, contract):
     job = read(path)
     case = job["case"]
     scope = set(accounts)
-    if job.get("origin") != base or set(job.get("accounts",[])) != scope or case.get("contract") != contract:
+    if job.get("origin") not in archive_origins(base) or set(job.get("accounts",[])) != scope or case.get("contract") != contract:
         raise ValueError(_SCOPE_ERROR)
     stage = job.get("stage")
     lines = [f"合同 {contract} · {STAGES.get(stage, '进度待核')}"]
     if job.get("kind") == "purchase":
         supply = job["supply"]
         actors = supply["roles"]
-        if (supply.get("contract") != contract or supply.get("origin") != base
+        if (supply.get("contract") != contract or supply.get("origin") not in archive_origins(base)
                 or set(supply.get("accounts", [])) != scope or set(actors.values()) - scope):
             raise ValueError(_SCOPE_ERROR)
         result = job.get("result")

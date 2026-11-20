@@ -7,6 +7,7 @@ import re
 from secrets import token_hex
 
 from domestic import run_domestic, amount
+from live_platform import archive_origins
 from market import catalogue_item, market_price, PRODUCTS
 from pricing import factory_costs, q
 
@@ -100,7 +101,7 @@ def plan_supply(platform,buyer_id,factory_id,product_id,cartons,floor_percent):
 def execute_supply(platform,plan,state_dir):
     ct = plan.get('contract','')
     if (plan.get('mode') != 'domestic' or plan.get('version') != 1 or
-            plan.get('origin') != platform.base_url or set(plan.get('accounts',[])) != set(platform._accounts) or
+            plan.get('origin') not in archive_origins(platform.base_url) or set(plan.get('accounts',[])) != set(platform._accounts) or
             not re.fullmatch(r'WD\d{6}[A-F0-9]{6}',ct) or plan.get('order',{}).get('contract') != ct):
         raise ValueError('采购计划的平台、账号或合同号与本次执行不匹配。')
     roles = _roles(platform,plan['roles']['exporter'],plan['roles']['factory'])

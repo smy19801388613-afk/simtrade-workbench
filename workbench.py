@@ -6,7 +6,7 @@ import re
 import sys
 from secrets import token_hex
 
-from live_platform import LivePlatform, ROLES
+from live_platform import DEFAULT_SCHOOL_URL, LivePlatform, ROLES, archive_origins
 from market import PRODUCTS
 from pipeline import read, write, store_new, advance, run_lock
 from planning import rotation, new_job
@@ -112,7 +112,7 @@ def scope_jobs(data,platform,ids):
     ret=[]
     for p in data.glob("*/job.json"):
         j=read(p)
-        if j.get("origin")==platform.base_url and set(j.get("accounts",[]))==set(ids):
+        if j.get("origin") in archive_origins(platform.base_url) and set(j.get("accounts",[]))==set(ids):
             ret.append((p.parent,j))
     return sorted(ret,key=lambda x:x[1].get("created",""),reverse=True)
 
@@ -131,7 +131,7 @@ def new_round(platform,ids,data,ask):
         from diversity import read_current_method
         for path in data.glob("*/job.json"):
             past=read(path)
-            if past.get("origin")==platform.base_url and past.get("stage")=="completed" and set(past.get("accounts",[])) & set(ids):
+            if past.get("origin") in archive_origins(platform.base_url) and past.get("stage")=="completed" and set(past.get("accounts",[])) & set(ids):
                 history.append(past)
         snaps=[read_current_method(platform,platform.snapshot(a,r),data)
                for a in ids for r in ("exporter","importer")]
@@ -220,9 +220,10 @@ def console(platform,ids,data):
 
 def school_address(data):
     try:
-        return (data/"学校平台地址.txt").read_text(encoding="utf-8-sig").strip()
+        saved=(data/"学校平台地址.txt").read_text(encoding="utf-8-sig").strip()
     except (OSError,UnicodeError):
-        return ""
+        saved=""
+    return saved or DEFAULT_SCHOOL_URL
 
 
 def default_data():
@@ -252,8 +253,7 @@ def main():
     first=input("输入账号（以空格分开，0 退出）：").strip()
     if first in ("","0"):return
     saved=school_address(data)
-    prompt=f"学校平台地址 [{saved}]：" if saved else "学校平台地址："
-    base=input(prompt).strip() or saved
+    base=input(f"学校平台地址 [{saved}]：").strip() or saved
     print("本次登录地址："+base)
     platform,ids=login(first,base)
     data.mkdir(parents=True,exist_ok=True);print("存档位置："+str(data))

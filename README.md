@@ -7,7 +7,7 @@
 ## 下载和启动
 
 1. [下载 Windows x64 压缩包](https://github.com/smy19801388613-afk/simtrade-workbench/releases/latest/download/SIMtrade-workbench-Agent-Windows-x64.zip)，完整解压到可写目录，双击 `SIMtrade工作台.exe`。浏览器会自动打开，使用期间请保持终端窗口开启。
-2. 在能访问学校平台的网络下，填写学校的 SIMtrade 地址和本次使用的学生账号。地址可向任课教师确认。
+2. 连上校园网或学校 VPN，输入本次使用的学生账号和密码，点击「连接账号」。工作台已预填 `http://80.80.80.23/simtrade/`。使用其他学校的平台时，可在「学校平台地址」中修改。
 3. 在「新建交易」选择商品、箱数、贸易术语和结算方式，核对各角色分工和预计利润后再确认办理。FOB、CFR、CIF 可分别搭配 T/T、D/P、D/A、L/C，也可以逐笔指定。
 
 ## Agent 助手

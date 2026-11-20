@@ -40,7 +40,7 @@ async function mutate(path, payload, message){
   finally{runningRequest=false;updateControls();clearTimeout(schedule);schedule=setTimeout(poll,state?.task?.status==='running'||state?.agent?.busy?700:4000);}
 }
 function sessionCard(){
-  return '<section class="panel"><div class="section-head"><div><h2>连接实训账号</h2><p>输入本次参与业务的 1–3 个账号。密码仅在本次运行中使用。</p></div></div><form id="login" autocomplete="off"><div id="account-list"></div><div class="accounts-control"><button type="button" class="btn secondary small" id="add-account">＋ 添加账号</button></div><details class="server-box"'+(state.base?'':' open')+'><summary>学校平台地址</summary><label class="field"><span>服务地址</span><input type="url" name="base" required value="'+esc(state.base)+'" placeholder="https://school.example/SIMtrade/" autocomplete="off"></label></details><div class="form-foot"><span class="hint">请使用能访问学校平台的网络。</span><button class="btn primary" data-lock>连接账号</button></div></form></section>';
+  return '<section class="panel"><div class="section-head"><div><h2>连接实训账号</h2><p>输入本次参与业务的 1–3 个账号。密码仅在本次运行中使用。</p></div></div><form id="login" autocomplete="off"><div id="account-list"></div><div class="accounts-control"><button type="button" class="btn secondary small" id="add-account">＋ 添加账号</button></div><details class="server-box" open><summary>学校平台地址</summary><label class="field"><span>服务地址</span><input type="url" name="base" required value="'+esc(state.base)+'" placeholder="https://school.example/SIMtrade/" autocomplete="off"></label></details><div class="form-foot"><span class="hint">请使用能访问学校平台的网络。</span><button class="btn primary" data-lock>连接账号</button></div></form></section>';
 }
 function addAccount(){
   const list=byId('account-list');if(!list||list.children.length>=3)return;

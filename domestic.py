@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 from urllib.parse import urljoin, urlsplit, parse_qs
 
-from live_platform import ROLES, _menu_link, _contract_rows
+from live_platform import ROLES, _menu_link, _contract_rows, archive_origins
 from student_document import read_document, save_document
 from wording import cn_money
 
@@ -205,7 +205,8 @@ class _Journal:
         self.path = path
         self.data = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {
             'identity':identity,'signed':date.today().isoformat(),'steps':{}}
-        require(self.data['identity'] == identity, '同号订单与已保存的角色或交易条件不同。')
+        require(any(self.data['identity'] == dict(identity, platform=base)
+                    for base in archive_origins(identity['platform'])), '同号订单与已保存的角色或交易条件不同。')
 
     def save(self):
         temp = self.path.with_suffix('.tmp')

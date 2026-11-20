@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 import tempfile
 
+from live_platform import archive_origins
+
 
 def read(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
@@ -83,7 +85,7 @@ def advance(platform, directory, *, through="completed", progress=print):
     if through not in stages:raise ValueError("未知阶段。")
     with run_lock(d.parent):
         j=read(p);c=j["case"];b=j["budget"]
-        if (d.name!=c["contract"] or j["origin"]!=platform.base_url or
+        if (d.name!=c["contract"] or j["origin"] not in archive_origins(platform.base_url) or
             set(j["accounts"])!=set(platform._accounts) or not set(accounts_for(c).values())<=set(j["accounts"])):
             raise ValueError("存档的平台、合同或授权账号与本次登录不同。")
         def finish(stage):

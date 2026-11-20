@@ -3,7 +3,7 @@ from hashlib import sha256
 from html.parser import HTMLParser
 from pathlib import Path
 
-from live_platform import PlatformError, ROLES, _menu_link
+from live_platform import PlatformError, ROLES, _menu_link, archive_origins
 from pipeline import read, write
 from trade_modes import PAYMENTS, TERMS
 
@@ -76,8 +76,10 @@ def read_current_method(platform, snapshot, history_dir=None):
     result = _read_active_contract(platform, snapshot)
     if history_dir is None or result.get("role") not in ROLES_FOREIGN:
         return result
-    scope = "\0".join((platform.base_url, str(result["account"]), result["role"]))
-    directory = Path(history_dir) / ".method-history" / sha256(scope.encode()).hexdigest()
+    directories = []
+    for base in archive_origins(platform.base_url):
+        scope = "\0".join((base, str(result["account"]), result["role"]))
+        directories.append(Path(history_dir) / ".method-history" / sha256(scope.encode()).hexdigest())
     rows = []
     note = result.get("method_note", "")
     for row in result.get("contracts", []):
@@ -85,12 +87,12 @@ def read_current_method(platform, snapshot, history_dir=None):
         if row.get("kind") != "foreign" or row.get("status") != "已经完成" or not row.get("number"):
             continue
         ct = row["number"]
-        path = directory / (sha256(ct.encode()).hexdigest() + ".json")
+        name = sha256(ct.encode()).hexdigest() + ".json"
         try:
             if row.get("method_source") == "主合同信息":
                 observed = {"number": ct, "terms": row["terms"], "payment": row["payment"]}
-                write(path, observed)
-            elif path.exists():
+                write(directories[0] / name, observed)
+            elif path := next((d / name for d in directories if (d / name).is_file()), None):
                 saved = read(path)
                 if (isinstance(saved, dict) and saved.get("number") == ct
                         and saved.get("terms") in TERMS and saved.get("payment") in PAYMENTS):

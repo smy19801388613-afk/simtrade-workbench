@@ -14,6 +14,15 @@ from urllib.request import (
 )
 
 
+DEFAULT_SCHOOL_URL = "http://80.80.80.23/simtrade/"
+_CAMPUS_ARCHIVE_URLS = (DEFAULT_SCHOOL_URL, "http://80.80.80.23/SIMtrade/")
+
+
+def archive_origins(base):
+    """Include the earlier mixed-case campus URL when reading local business records."""
+    return _CAMPUS_ARCHIVE_URLS if base in _CAMPUS_ARCHIVE_URLS else (base,)
+
+
 ROLES = {
     "exporter": ("1", "Export", "MapA.aspx", "CastInfo.aspx", (("foreign", "E2"), ("domestic", "E3"))),
     "importer": ("2", "Import", "MapC.aspx", "CastInfo_Importer.aspx", (("foreign", "I2"),)),

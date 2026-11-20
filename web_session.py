@@ -7,7 +7,7 @@ import sys
 from secrets import token_urlsafe
 from threading import RLock, Thread
 
-from live_platform import LivePlatform
+from live_platform import LivePlatform, archive_origins
 from market import PRODUCTS
 from model_provider import ModelProviderError, _destination, ask_model
 from pipeline import read, store_new
@@ -100,7 +100,7 @@ class DesktopSession:
         for path in self.data.glob("*/job.json"):
             job = read(path)
             actors = set(job.get("accounts", []))
-            if job.get("origin") != self.platform.base_url or not actors & active:
+            if job.get("origin") not in archive_origins(self.platform.base_url) or not actors & active:
                 continue
             all_jobs.append(job)
             if actors != active:
