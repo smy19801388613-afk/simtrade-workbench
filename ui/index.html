@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="referrer" content="no-referrer">
+  <title>交易总览 · SIMtrade 工作台</title>
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./agent.css">
+  <script defer src="./agent.js"></script>
+  <script defer src="./app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">跳至工作区</a>
+  <div class="app">
+    <aside class="sidebar">
+      <a href="#overview" class="brand" aria-label="SIMtrade 工作台首页"><i class="brand-mark" aria-hidden="true"><b></b><b></b><b></b></i><span>SIMtrade<small>实训工作台</small></span></a>
+      <nav class="nav" aria-label="工作台导航">
+        <a href="#overview" data-page="overview"><i class="ico ico-overview" aria-hidden="true"></i>交易总览</a>
+        <a href="#trade" data-page="trade"><i class="ico ico-plus" aria-hidden="true"></i>新建交易</a>
+        <a href="#archive" data-page="archive"><i class="ico ico-archive" aria-hidden="true"></i>合同存档</a>
+        <a href="#settings" data-page="settings"><i class="ico ico-settings" aria-hidden="true"></i>连接设置</a>
+      </nav>
+      <div class="sidebar-foot"><i class="dot"></i><span>本地终端执行</span></div>
+    </aside>
+    <main id="main" tabindex="-1">
+      <div class="topline"><span class="connection" id="connection">正在连接工作台</span><button type="button" id="open-agent" class="agent-button" aria-haspopup="dialog" aria-controls="agent-panel"><span class="agent-glyph" aria-hidden="true">✦</span> Agent 助手</button></div>
+      <div class="content">
+        <header class="page-head"><div><h1 id="heading">交易总览</h1><p id="subtitle"></p></div><div id="head-action"></div></header>
+        <p class="feedback" id="feedback" role="status" hidden></p>
+        <div id="task-status" aria-label="当前工作台任务"></div>
+        <div id="view"><section class="panel empty">正在读取本地工作台…</section></div>
+      </div>
+    </main>
+  </div>
+  <dialog id="agent-panel" aria-labelledby="agent-title">
+    <header class="agent-head"><div class="agent-emblem" aria-hidden="true">✦</div><div><h2 id="agent-title">工作台 Agent</h2><a href="#settings" id="agent-mode">模型设置</a></div><button type="button" id="close-agent" class="icon-btn" aria-label="关闭 Agent 对话">×</button></header>
+    <div class="agent-scroll" id="agent-scroll">
+      <section id="chat-welcome">
+        <h3>有什么需要处理？</h3>
+        <p>可以询问实训流程，也可以把工作台任务交给我。</p>
+        <div class="agent-prompts" id="chat-prompts"></div>
+      </section>
+      <div id="chat-messages" role="log" aria-label="对话消息" aria-live="polite" aria-relevant="additions text"></div>
+      <p class="agent-thinking" id="chat-thinking" role="status" hidden>Agent 正在处理…</p>
+      <section id="chat-pending" class="agent-confirm" aria-label="待确认的操作" hidden></section>
+    </div>
+    <form id="chat-compose" autocomplete="off">
+      <p id="chat-error" class="agent-error" role="alert" hidden></p>
+      <label class="chat-label" for="chat-input">给 Agent 发消息</label>
+      <textarea id="chat-input" rows="2" maxlength="2000" placeholder="问一个问题，或描述要办理的任务…"></textarea>
+      <div class="chat-sendbar"><span>Enter 发送 · Shift + Enter 换行</span><button type="submit" id="chat-send" class="btn primary small">发送</button></div>
+    </form>
+  </dialog>
+  <dialog id="dialog" aria-labelledby="dialog-title">
+    <div class="dialog-body"><div class="dialog-head"><h2 id="dialog-title">确认执行</h2><button class="icon-btn" id="dialog-close" aria-label="关闭">×</button></div>
+    <div id="dialog-content"></div><div class="dialog-actions"><button class="btn secondary" id="dialog-cancel">返回</button><button class="btn primary" id="dialog-confirm">确认</button></div></div>
+  </dialog>
+</body>
+</html>

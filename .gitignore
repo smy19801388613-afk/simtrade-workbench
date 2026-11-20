@@ -1,0 +1,19 @@
+# This folder also holds local distributions, credentials and classroom records.
+/*
+!/.gitignore
+!/README.md
+!/使用说明.md
+!/实测记录.md
+!/*.py
+!/ui/
+!/docs/
+/docs/*
+!/docs/workbench.png
+!/skills/
+/skills/*
+!/skills/simtrade-operator/
+__pycache__/
+*.pyc
+.env*
+学校平台地址.txt
+工作台数据/
