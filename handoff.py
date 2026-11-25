@@ -9,6 +9,7 @@ from typing import Callable, Protocol
 
 SKILL = Path(__file__).parent / "skills" / "simtrade-operator"
 ROLES = {"exporter", "importer", "factory", "export_bank", "import_bank"}
+ACCOUNT_ALIASES = tuple("ABCDEFGHIJ")
 REASONS = {"payment_result_unknown", "document_mismatch", "unknown_stage"}
 FACTS = {"receipt_pending", "payment_seen", "bank_reply_missing", "inspection_required",
          "document_check_failed", "contract_confirmed", "draft_open", "draft_corrected",
@@ -32,7 +33,7 @@ class Snapshot:
     revision: int  # local host version, incremented when relevant evidence changes
 
     def packet(self):
-        if (self.actor not in ("A", "B", "C") or self.role not in ROLES
+        if (self.actor not in ACCOUNT_ALIASES or self.role not in ROLES
                 or not re.fullmatch(r"JOB-[1-9][0-9]{0,4}", self.contract)
                 or self.terms not in ("FOB", "CFR", "CIF")
                 or self.payment not in ("T/T", "D/P", "D/A", "L/C")

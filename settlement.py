@@ -96,13 +96,70 @@ class _Journal:
         return result
 
 
-def _message(page, expected):
+def _messages(page):
     texts = [page.text, *page.messages]
     for script in page.scripts:
         texts.extend(re.findall(r"""alert\(\s*["']([^"']+)["']\s*\)""", script))
+    return list(dict.fromkeys(texts))
+
+
+def _message(page, expected):
+    texts = _messages(page)
     if not any(expected in value for value in texts):
         raise SettlementReview("平台未返回预期回执：" + " ".join(texts)[:240])
     return expected
+
+
+_LOSS_EVENTS = (
+    "运输船只在海上意外触礁，连同货物一起沉没，无法办理相关进口手续",
+    "在运输过程中遭遇船员罢工暴动，造成货物毁损", "在运输过程中受潮，造成货物受损",
+    "运输船只若干天前在海上突然行踪不明，至今失去音讯已逾法定时间，可确认为失踪",
+    "在装卸过程中由于意外情况，全部落海", "运输船只在海上发生爆炸，船货俱损，事故原因不明",
+    "在运输过程中被全部偷走，不能抵达目的港",
+)
+_LOSS_RECEIPT = re.compile(
+    r"(?P<notice>本批货物(?:" + "|".join(map(re.escape, _LOSS_EVENTS)) +
+    r")[，,]\s*请(?:速|尽快|立即)?向保险公司(?:申请|办理)索赔(?:手续)?[。！!]?)(?:\s+(?P=notice))*"
+)
+_CLAIMS_REQUIRING_DOCUMENT_CHECK = {
+    "本批货物在运输过程中混进了杂质，货物被沾污受损，请速向保险公司办理索赔手续。",
+    "本批货物运输船只在运输过程中发生火灾，货物遭到毁损，请速向保险公司办理索赔手续。",
+}
+
+
+def _claim_notice(text):
+    # These exact school notices have been observed on the no-delivery branch.
+    # A partial loss or a conditional suggestion can also mention a claim.
+    text = text.removeprefix("平台未返回预期回执：").strip().removeprefix("提示信息").strip()
+    copies = set(text.split())
+    if len(copies) == 1 and copies <= _CLAIMS_REQUIRING_DOCUMENT_CHECK:
+        return copies.pop()
+    match = _LOSS_RECEIPT.fullmatch(text)
+    return match["notice"] if match else None
+
+
+def _delivery_review(journal, text):
+    journal.data["facts"]["delivery_review"] = text[:500]
+    journal.save()
+    raise SettlementReview("学校换单回执需要核对货损范围和可提货数量：" + text[:500])
+
+
+def _restore_delivery_notice(journal, previous_attention):
+    # v1.3.0 persisted the school's reply in job.json, but had already marked
+    # the exchange pending. Migrate it before a later retry replaces attention.
+    step = journal.data["steps"].get("delivery_order", {})
+    if (step.get("status") != "pending" or journal.data["facts"].get("delivery_review")
+            or not previous_attention or previous_attention.get("stage") != "shipped"):
+        return
+    message = previous_attention.get("message", "")
+    notice = _claim_notice(message) if message.startswith("平台未返回预期回执：") else None
+    if notice in _CLAIMS_REQUIRING_DOCUMENT_CHECK:
+        journal.data["facts"]["delivery_review"] = message
+        journal.save()
+    elif notice:
+        journal.run("delivery_order", None, lambda: {"result": "claim_notice", "notice": notice})
+    elif message.startswith("平台未返回预期回执：") and "索赔" in message:
+        _delivery_review(journal, message)
 
 
 def _ledger(session, ct=None):
@@ -140,6 +197,111 @@ def _entry(ledger, label, side, expected=None):
     return row
 
 
+CLAIM_ITEMS = {"货物保险金", "保险赔款", "保险赔付", "保险赔偿金"}
+
+
+def _claim_credit(rows, case):
+    hits = [r for r in rows if r.get("contract") == case["contract"] and r["item"] in CLAIM_ITEMS]
+    if not hits:
+        return None
+    if len(hits) != 1:
+        raise SettlementReview("同一合同有多条保险赔款流水，请核对。")
+    row = hits[0]
+    money = row["income"].split()
+    if row["expense"] or len(money) != 2 or money[0] != case["buyer"]["currency"] or _decimal(money[1]) <= 0:
+        raise SettlementReview("保险赔款流水的币种、收支方向或金额不符。")
+    return row
+
+
+def _delivery_result(buyer, case, journal):
+    from foreign_trade import _list_page, _notes, note, open_action
+    ct = case["contract"]
+
+    def claim_receipt(notice):
+        if notice in _CLAIMS_REQUIRING_DOCUMENT_CHECK:
+            facts = journal.data["facts"]
+            if "delivery_review" not in facts:
+                # Persist the school reply before querying documents, so a failed
+                # lookup can be retried without repeating the exchange action.
+                facts["delivery_review"] = notice
+                journal.save()
+            docs = _notes(_list_page(buyer, ct, "I2"))
+            policy = docs.get("M26")
+            if "M41" in docs or not policy or policy[2] != case["documents"].get("M26"):
+                raise SettlementReview("货损回执与当前单据尚未核平，请核对保单及是否已签发提货单。")
+            del facts["delivery_review"]
+        return {"result": "claim_notice", "notice": notice}
+
+    def exchange():
+        page = open_action(buyer, ct, "I3", "换提货单")
+        texts = [body for t in _messages(page) if (body := t.strip().removeprefix("提示信息").strip())]
+        if texts and all(re.fullmatch(r"成功换取提货单[！!。]?", t) for t in texts):
+            return {"result": "delivery_order", "notice": "成功换取提货单"}
+        notices = {_claim_notice(t) for t in texts}
+        if len(notices) == 1 and None not in notices:
+            return claim_receipt(notices.pop())
+        _delivery_review(journal, " ".join(texts) or "平台返回空回执")
+
+    def reconcile():
+        paid = _claim_credit(_ledger(buyer, ct), case)
+        if paid:
+            raise SettlementReview("本合同已有保险赔款，但原换单回执缺失，请核对是否还有货物可提。")
+        if "M41" in _notes(_list_page(buyer, ct, "I2")):
+            order = read_document(buyer, note(buyer, ct, "I2", "M41"))[0]
+            if (order.tag == "M41" and order.findtext("M4106") == ct and
+                    order.findtext("M4114") == case["documents"]["M01"] and order.findtext("M4101")):
+                return {"result": "delivery_order", "notice": "已核实与合同和提单相符的提货单"}
+        raise SettlementReview("换提货单曾中断，尚无可核实的本合同事故通知、提货单或保险赔款。请核对进口商的换单回执。")
+
+    review = journal.data["facts"].get("delivery_review")
+    if review:
+        step = journal.data["steps"].get("delivery_order", {})
+        notice = _claim_notice(review)
+        if notice in _CLAIMS_REQUIRING_DOCUMENT_CHECK:
+            if step.get("status") == "pending":
+                return journal.run("delivery_order", None, lambda: claim_receipt(notice))
+            # An older workbench may flag a receipt already verified by a newer
+            # one. Clear only an identical notice after checking the documents.
+            previous = step.get("receipt")
+            if (step.get("status") == "verified" and isinstance(previous, dict)
+                    and previous.get("result") == "claim_notice" and isinstance(previous.get("notice"), str)
+                    and _claim_notice(previous["notice"]) == notice):
+                confirmed = claim_receipt(notice)
+                journal.save()
+                return confirmed
+        raise SettlementReview("学校换单回执需要核对货损范围和可提货数量：" + review)
+    result = journal.run("delivery_order", exchange, reconcile)
+    if result["result"] == "claim_notice" and not _claim_notice(result["notice"]):
+        _delivery_review(journal, result["notice"])
+    return result
+
+
+def _settle_claim(buyer, case, journal, *, before_claim=None):
+    from foreign_trade import open_action
+    ct = case["contract"]
+
+    def credit():
+        return _claim_credit(_ledger(buyer, ct), case)
+
+    unsubmitted = "claim" not in journal.data["steps"]
+    existing = credit() if unsubmitted else None
+    # The exchange receipt is durable. An observer may pause here without
+    # leaving a pending intent for an insurance request that was never sent.
+    if before_claim is not None and unsubmitted and existing is None:
+        before_claim(case, journal)
+
+    def claim():
+        return existing or _message(open_action(buyer, ct, "I8", "保险索赔"), "成功办理索赔")
+
+    receipt = journal.run("claim", claim, credit)
+    # A success page alone cannot prove the amount or currency received.
+    paid = receipt if isinstance(receipt, dict) else credit()
+    if not paid:
+        raise SettlementReview("已收到办理索赔的回执，尚未查到本合同保险赔款入账。稍后续办可重新核对。")
+    journal.data["facts"]["claim_credit"] = paid
+    journal.save()
+
+
 def _sale_rows(rows, case):
     product = case["product"]
     matches = []
@@ -160,8 +322,13 @@ def audit_role_ledger(rows, role, case, budget, steps, facts):
     if not principal:
         raise SettlementReview("未查到与合同结算方式、币种和金额匹配的收付本金。")
     out = {"principal": principal}
-    if role != "importer" or case.get("claim_settled"):
+    if role != "importer":
         return out
+    if case.get("claim_settled"):
+        credit = _claim_credit(rows, case)
+        if not credit:
+            raise SettlementReview("结案核对未找到本合同的保险赔款收入。")
+        return dict(out, claim_credit=credit)
     sale = steps["sale"]
     if sale["status"] != "verified":
         raise SettlementReview("销货操作尚无成功回执。")
@@ -286,7 +453,7 @@ def _inspect_import(buyer, case, budget, journal):
         journal.run("import_inspection", submit, receipt)
 
 
-def _complete(platform, case, budget, journal):
+def _complete(platform, case, budget, journal, *, before_claim=None):
     from foreign_trade import add_note, note, open_action, send_docs
     ct = case["contract"]
     buyer = platform.session(case["buyer_account"], "importer")
@@ -328,15 +495,9 @@ def _complete(platform, case, budget, journal):
     if case["payment"]!="D/A":confirm_payment()
     case["documents_received"]=True
 
-    def exchange_order():
-        page = open_action(buyer, ct, "I3", "换提货单")
-        if "本批货物" in page.text and "向保险公司办理索赔" in page.text:
-            return {"result": "claim_notice", "notice": page.text[:500]}
-        return {"result": "delivery_order", "notice": _message(page, "成功换取提货单")}
-
-    exchange = journal.run("delivery_order", exchange_order)
+    exchange = _delivery_result(buyer, case, journal)
     if exchange["result"] == "claim_notice":
-        journal.run("claim", lambda: _message(open_action(buyer, ct, "I8", "保险索赔"), "成功办理索赔"))
+        _settle_claim(buyer, case, journal, before_claim=before_claim)
         case.update(claim_settled=True, import_status="claim_settled", delivery_exception=exchange["notice"])
     else:
         if "arrival" not in journal.data["facts"]:
@@ -451,7 +612,7 @@ def _complete(platform, case, budget, journal):
                 evidence=journal.data["facts"]["completion"], checkpoint=str(journal.path))
 
 
-def settle_trade(platform, case, budget, state_dir):
+def settle_trade(platform, case, budget, state_dir, *, previous_attention=None, before_claim=None):
     """Run from confirmed shipment; returns 'completed' or a precise 'needs_review' result."""
     ct = str(case.get("contract", ""))
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,60}", ct):
@@ -466,7 +627,8 @@ def settle_trade(platform, case, budget, state_dir):
         path.parent.mkdir(parents=True, exist_ok=True)
         with _exclusive(path.with_suffix(".lock")):
             journal = _Journal(path, case)
-            return _complete(platform, case, budget, journal)
+            _restore_delivery_notice(journal, previous_attention)
+            return _complete(platform, case, budget, journal, before_claim=before_claim)
     except Exception as error:
         return {"status": "needs_review", "contract": ct, "reason": str(error),
                 "checkpoint": str(path)}

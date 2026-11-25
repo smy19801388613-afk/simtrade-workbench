@@ -6,6 +6,7 @@ import re
 import unicodedata
 
 from market import PRODUCTS, VERIFIED_PRODUCTS, port_catalogue, port_input
+from model_provider import ModelProviderError
 from trade_modes import PAYMENTS, TERMS
 
 
@@ -24,7 +25,7 @@ TOOLS = {
     "status": "读取工作台余额、各角色等级、待办或当前执行进度。",
     "refresh": "从学校重新同步当前登录角色。",
     "jobs": "列出当前账号组合的合同存档，可按一个准确阶段筛选。",
-    "preview": "取得实时行情并试算报价，尚未正式签约。须写明商品 ID。",
+    "preview": "读取行情并试算报价，支持自动均衡选品或指定起始商品。",
     "start": "请求用户核对并执行当前这份报价。",
     "resume": "请求用户核对并续办当前账号组合中的一个未结合同。",
     "terminal_check": "直接用本地工作台终端执行离线自检。",
@@ -59,22 +60,28 @@ def _integer(s):
         return int(s)
     digits = "零一二三四五六七八九"
     s=s.replace("两","二")
-    if s=="一百":return 100
+    if s in ("一百","百"):return 100
+    if re.search("[百千万]",s):raise ValueError("当前数量和序号上限是 100。")
     if "十" in s:
         left,right=s.split("十",1)
         return (digits.index(left) if left else 1)*10+(digits.index(right) if right else 0)
     return digits.index(s)
 
 
-N = r"([-+]?\d+(?:\.\d+)?|一百|[一二两三四五六七八九]?十[一二三四五六七八九]?|[零一二两三四五六七八九])"
+N = r"([-+]?\d+(?:\.\d+)?|[零一二两三四五六七八九十百千万]+)"
 PAY_PATTERN=r"(?<![A-Z])(T\s*/?\s*T|D\s*/?\s*P|D\s*/?\s*A|L\s*/?\s*C)(?![A-Z])"
 TERM_PATTERN=r"(?<![A-Z])(CIF|CFR|FOB)(?![A-Z])"
 MODIFY=r"改成|改为|换成|换为|沿用|照上|还是用|改用|改到|改做|上一笔|上一个报价|这份报价|其余不变|其他不变|重新报价"
 QUOTE=r"报价|试算|拟单|下单|开单|新建交易|安排.{0,5}(?:订单|交易)|(?:做|跑|来|拟|准备).{0,5}(?:笔|单)|测算|预算一下"
-EDUCATE=r"怎么|如何|区别|解释|为什么|是什么|什么意思|代表什么|流程|操作步骤|教我|是否应该|会不会|有什么不同"
+EDUCATE=r"怎么|如何|区别|解释|为什么|是什么|什么意思|代表什么|原理|介绍|流程|操作步骤|教我|是否应该|会不会|有什么不同"
 NEGATE=r"先不要|先不用|先别|暂不|(?:别|不要|无需|不必|不想|先不).{0,5}(?:执行|签约|提交|开单|下单|操作|继续|续办|同步|报价)"
 EXECUTE=r"(?:开始|确认|执行|提交).{0,5}(?:当前|报价|这份报价|这批|订单)|(?:报价|这批).{0,4}(?:执行|提交)|^(?:确认|开始|执行)(?:执行|下单|成交)?[吧。!！]?$"
 RESUME=r"续办|继续(?:办理|该单|这笔|合同|执行|履约)|恢复(?:合同|办理|交易)|重试原单|接着办"
+BALANCED=r"(?:均衡|自动)(?:选品|选货|选商品|选择商品)|均衡(?:提升等级|提高等级|发展)"
+
+
+def _asks_for_explanation(txt):
+    return re.search(EDUCATE,txt) or (re.search(BALANCED,txt) and re.search(r"[吗么呢？?][？?。]?$",txt))
 
 
 def _constraints(text, ctx):
@@ -94,13 +101,14 @@ def _constraints(text, ctx):
     elif re.search(r"(?:全部|所有|完整)(?:的)?(?:商品|品类|目录)",txt):
         out["product_scope"]="all"
     if goods:out["product"]=goods[0]
+    elif re.search(BALANCED,txt):out["product"]="AUTO"
     if term:out["terms"]=term[0]
     if payment:out["payment"]=payment[0]
     if re.search(r"结算(?:方式)?(?:自动|轮换)|轮换结算",txt):out["payment"]="AUTO"
     if re.search(r"术语(?:自动|轮换)|轮换术语",txt):out["terms"]="ROTATE"
     if re.search(r"自由搭配|全(?:部)?自动轮换|(?:组合|搭配)轮换|自动搭配",txt):
         out.setdefault("terms","ROTATE");out.setdefault("payment","AUTO")
-    for key,pattern,lo,hi in (("count",N+r"\s*(?:笔|单(?!据|价|位))",1,12),
+    for key,pattern,lo,hi in (("count",N+r"\s*(?:笔|(?:个|张)?订单|单(?!据|价|位))",1,100),
                               ("cartons",N+r"\s*(?:个)?箱",1,100),
                               ("floor",N+r"\s*%",0,100)):
         match=re.search(pattern,txt)
@@ -116,7 +124,7 @@ def _constraints(text, ctx):
         pairs=re.findall(TERM_PATTERN+r"[\s+＋、/搭配用配和与结算]*"+PAY_PATTERN,txt)
         if not pairs or len(pairs)!=len(term) or len(pairs)!=len(payment):
             raise ValueError("请按顺序写出每笔的术语和结算方式，例如「第一笔 FOB＋D/P，第二笔 CIF＋L/C」。")
-        if len(pairs)>12:raise ValueError("一批最多可试算 12 笔。")
+        if len(pairs)>100:raise ValueError("一批最多可试算 100 笔。")
         if "count" in out and out["count"]!=len(pairs) and not re.search("第"+N+"笔",txt):
             raise ValueError("订单数和指定搭配数不一致。请给每一笔写一组搭配。")
         out.update(count=len(pairs),plans=[{"terms":t,"payment":p} for t,p in pairs])
@@ -146,7 +154,13 @@ def _constraints(text, ctx):
 def _party(txt,ctx):
     # Ignore the A of D/A and C of L/C when looking for account aliases.
     txt=re.sub(PAY_PATTERN," ",txt)
-    aliases=set(re.findall(r"(?<![A-Z0-9])([ABC])(?![A-Z0-9])",txt))
+    accounts=ctx.get("accounts",[])
+    def ordinal(m):
+        n=_integer(m[1])
+        if not 1<=n<=len(accounts):raise ValueError("指定的账号序号超出当前连接的账号范围。")
+        return "账号"+accounts[n-1]
+    txt=re.sub(r"第\s*"+N+r"\s*个?账号",ordinal,txt)
+    aliases=set(re.findall(r"(?<![A-Z0-9])([A-J])(?![A-Z0-9])",txt))
     if aliases-set(ctx.get("accounts",[])):
         raise ValueError("这个账号代号不在当前连接的账号中。请先核对账号，或切换账号组合。")
     if len(aliases)>1 and aliases!=set(ctx.get("accounts",[])):
@@ -193,7 +207,7 @@ def _quote(txt,history,ctx):
                     try:base.update(_constraints(old,ctx))
                     except ValueError:pass
                     break
-        index=re.search("第"+N+r"(?:笔|单)",txt)
+        index=re.search(r"第\s*"+N+r"\s*(?:笔|单)",txt)
         if index and re.search(MODIFY,txt) and base and "plans" not in changes:
             size=base.get("count",1)
             pos=_integer(index[1])
@@ -214,22 +228,23 @@ def _quote(txt,history,ctx):
                 base["plans"]=[dict(p,**{k:changes[k] for k in ("terms","payment") if k in changes}) for p in base["plans"]]
     out=dict(terms="CIF",payment="T/T",count=1,cartons=3,floor=70)
     out.update(base);out.update(changes)
-    if out.get("product_scope") == "verified" and out.get("product") not in VERIFIED_PRODUCTS:
+    out.setdefault("product","AUTO")
+    if out.get("product_scope") == "verified" and out["product"] not in ("AUTO",*VERIFIED_PRODUCTS):
         if "product" in changes:
             if "product_scope" in changes:raise ValueError("这个起始商品不在有结案记录的商品组内。")
             out["product_scope"]="all"
         else:
-            out["product"]=VERIFIED_PRODUCTS[0]
-    if out.get("product_scope")=="all":out.setdefault("product",next(iter(PRODUCTS)))
-    if "product" not in out:return result("answer","先用哪种商品试算？例如回复「床单」即可，箱数上限和资金保留比例也可以一起指定。")
+            out["product"]="AUTO"
     return result("preview","用当前行情试算三方报价。",**out)
 
 
 def _help(txt,ctx):
+    if re.search(BALANCED+r"|交易对象|交易伙伴|交易对手|对象过少|对象单调",txt):
+        return "选择「均衡轮换交易对象」会优先安排较少合作的买卖双方。起始商品保留「按三方历史均衡选品」会参考三方的历史商品记录选货，也可以手选一种商品开始顺序轮换。学校按实际业务更新等级与待办。"
     if re.search("同步|刷新|更新资料",txt):
         return "连接账号后，在交易总览点「同步资料」，或直接告诉我「同步资料」。工作台将重新读取已连接角色的余额、等级、待办，并刷新本机合同列表。"
     if re.search("连接|登录|密码|配置|API|模型",txt):
-        return "学校账号在连接表单中输入，多个账号可以一起连接。模型在「连接设置」填写兼容服务的完整 Chat Completions 地址、模型名和 Key，密码及 Key 请填在对应输入框。"
+        return "学校账号在连接表单中输入，多个账号可以一起连接。使用 DeepSeek 时，到「连接设置」选择 DeepSeek，输入 API Key，点击「测试并启用」。其他兼容服务可以填写基础地址或完整接口地址及模型名。"
     if re.search("收款|赔款|亏损|利润|核账",txt):
         return "可以对已结合同核对出口、进口和工厂的流水利润。现金变化还可能受到采购、税费、贷款及舍入影响。告诉我「核账」和合同号，我会调本地终端核对存档。"
     if re.search("单调|升级|等级.{0,8}(提高|提升|上升)",txt):
@@ -256,6 +271,7 @@ def _help(txt,ctx):
 
 def _wants_fresh_quote(txt,ctx):
     """A request to change goods or terms must not execute an older preview."""
+    if re.search(BALANCED,txt):return True
     has_spec = bool(_mentioned_products(txt,ctx))
     has_spec |= bool(re.search(TERM_PATTERN+"|"+PAY_PATTERN,txt) or any(x in txt for x in PAY_WORDS))
     has_spec |= bool(re.search(r"改为|改成|换成|重新报价|(?:先|重新)(?:试算|报价)|\d+\s*(?:箱|笔)",txt))
@@ -269,7 +285,7 @@ def _local(text,history,ctx,model_failed=False):
         if re.search(r"只.{0,3}(?:报价|试算|预览)|(?:先|帮我|请).{0,3}试算",txt):
             return _quote(txt,history,ctx)
         return result("answer","这条消息不会提交操作。已有交易的状态可在工作台查看。")
-    if re.search(EDUCATE,txt):
+    if _asks_for_explanation(txt):
         note=_help(txt,ctx)
         if note:return result("answer",note)
     if re.search(r"自检|检查.{0,4}(?:安装|程序|运行环境)|工作台.{0,2}体检",txt):
@@ -289,7 +305,7 @@ def _local(text,history,ctx,model_failed=False):
         return result("start","请核对当前报价后确认执行。") if ctx.get("preview") else result("answer","当前没有待执行的报价。先告诉我商品与条款，我可以先为你报价。")
     if re.search(r"同步|刷新|更新(?:一下)?(?:资料|余额|待办|状态)",txt):
         return result("refresh","从学校同步当前角色资料。")
-    mentioned=re.search(QUOTE+"|"+MODIFY,txt)
+    mentioned=re.search(QUOTE+"|"+MODIFY+"|"+BALANCED,txt)
     last_agent=next((m.get("content","") for m in reversed(history) if m.get("role")=="assistant"),"")
     if mentioned or ("哪种商品" in last_agent and _mentioned_products(txt,ctx)):
         return _quote(txt,history,ctx)
@@ -326,13 +342,16 @@ def _instructions():
             "工具及输入如下："+json.dumps({k:{"用途":v,"参数":sorted(PARAMS[k])} for k,v in TOOLS.items()},ensure_ascii=False)+
             "。status 角色 exporter/importer/factory，view 为余额 balances、待办 todo、当前任务 task 或 all。"
             "jobs 的 stage 是 open/quoted/contracted/supplied/shipped/completed。terminal_audit 和 resume 指定已知 J 代号。"
-            "preview 的 count 是1–12笔，cartons 是每笔上限1–100箱，floor 是现金保留百分数0–100。"
-            "商品用提供的 id。product_scope 取 verified（默认，轮换有结案记录的商品）或 all（完整目录）。"
-            "用户指定商品组即可用组内首个商品开头；单独点名组外商品使用 all。箱数与销售件数分开。terms 可选 FOB/CFR/CIF/ROTATE；"
+            "preview 的 count 是1–100笔，cartons 是每笔上限1–100箱，floor 是现金保留百分数0–100。"
+            "product_scope 取 verified（默认，已有结案记录的商品）或 all（完整目录）。"
+            "商品默认 AUTO，按三方历史均衡选品。用户点名起始商品时使用其 id；单独点名组外商品使用 all。箱数与销售件数分开。terms 可选 FOB/CFR/CIF/ROTATE；"
             "payment 可选 T/T,D/P,D/A,L/C,AUTO；逐笔选用 plans=[{terms,payment},…]，条数等于 count；"
-            "focus 为 A/B/C，focus_role 为 importer/exporter。port 留空将按每笔进口商国家选港；指定港名只适用于本批匹配该国的进口商。可沿用最近报价参数。"
+            "focus 为当前已连接账号的代号（A 到 J），focus_role 为 importer/exporter。port 留空将按每笔进口商国家选港；指定港名只适用于本批匹配该国的进口商。可沿用最近报价参数。"
             "只使用匿名账号、合同。提供的工具是此应用可实际执行的能力，终端可运行自检/核账。"
-            "不索取或推断密码、密钥和 Cookie，不生成外部可执行命令。以下为课程业务参考。\n"+"\n".join(refs))
+            "不索取或推断密码、密钥和 Cookie，不生成外部可执行命令。以下为课程业务参考。\n"+"\n".join(refs)+
+            '\n始终只返回一个 JSON 对象。自由问答的回复写在 text 中，包括用户要求只回复几个字时。'
+            '例如：{"tool":"answer","args":{},"text":"CIF 下由卖方安排海运和保险。"}。'
+            '查询待办的格式示例：{"tool":"status","args":{"view":"todo"},"text":""}。')
 
 
 def _decision(raw,ctx):
@@ -355,13 +374,13 @@ def _decision(raw,ctx):
     if tool=="preview":
         scope=args.get("product_scope")
         if "product_scope" in args and scope not in ("verified","all"):raise ValueError("商品范围有误。")
-        if scope=="verified" and args.get("product") not in (None,*VERIFIED_PRODUCTS):raise ValueError("起始商品不在所选范围内。")
-        if scope:args.setdefault("product",VERIFIED_PRODUCTS[0] if scope=="verified" else next(iter(PRODUCTS)))
-        if args.get("product") not in products(ctx):raise ValueError("商品编号有误。")
+        args.setdefault("product","AUTO")
+        if scope=="verified" and args["product"] not in ("AUTO",*VERIFIED_PRODUCTS):raise ValueError("起始商品不在所选范围内。")
+        if args["product"]!="AUTO" and args["product"] not in products(ctx):raise ValueError("商品编号有误。")
         if args.get("terms","CIF") not in (*TERMS,"ROTATE") or args.get("payment","T/T") not in (*PAYMENTS,"AUTO"):raise ValueError("合同条款有误。")
         if args.get("focus_role","importer") not in ("importer","exporter"):raise ValueError("优先角色有误。")
         if "port" in args:args["port"]=port_input(args["port"])
-        for key,lo,hi in (("count",1,12),("cartons",1,100),("floor",0,100)):
+        for key,lo,hi in (("count",1,100),("cartons",1,100),("floor",0,100)):
             if key in args and (type(args[key])!=int or not lo<=args[key]<=hi):raise ValueError("报价数字有误。")
         if "plans" in args and (not isinstance(args["plans"],list) or len(args["plans"])!=args.get("count",1) or
                 any(not isinstance(p,dict) or set(p)!={"terms","payment"} or p["terms"] not in (*TERMS,"ROTATE")
@@ -373,7 +392,7 @@ def plan(text,history,context,ask=None):
     """Return one capability or a conversational answer; credentials and execution stay with the caller."""
     history=history or []
     if not isinstance(text,str) or not text.strip():return result("answer","你希望查询什么，或让我办理哪项业务？")
-    failed=False
+    issue=""
     if ask is not None:
         messages=[{"role":"system","content":_instructions()},
                   {"role":"user","content":json.dumps({"已核实的工作台状态":context},ensure_ascii=False)}]
@@ -382,6 +401,13 @@ def plan(text,history,context,ask=None):
         messages.append({"role":"user","content":text})
         try:
             choice=_decision(ask(messages),context)
+            if choice["tool"]=="preview":
+                txt=plain(text)
+                if _asks_for_explanation(txt):
+                    return _local(text,history,context)
+                named=_mentioned_products(txt,context)
+                wanted=named[0] if len(named)==1 else ("AUTO" if re.search(BALANCED,txt) else None)
+                if wanted and wanted!=choice["args"]["product"]:return _quote(txt,history,context)
             # Questions about a transaction and requests to perform it have different effects.
             # The host will also bind every start/resume to a one-time confirmation.
             if choice["tool"] in ("start","resume") and re.search(EDUCATE+"|"+NEGATE,plain(text)):
@@ -393,9 +419,14 @@ def plan(text,history,context,ask=None):
             if choice["tool"]=="start" and _wants_fresh_quote(plain(text),context):
                 return _quote(plain(text),history,context)
             return choice
+        except ModelProviderError as exc:
+            issue=str(exc)
         except (ValueError,TypeError,RuntimeError,KeyError,OSError):
-            failed=True
-    try:return _local(text,history,context,failed)
+            issue="模型未返回工作台可用的动作格式。"
+    try:
+        decision=_local(text,history,context,bool(issue))
+        if issue:decision["notice"]=issue+" 本轮使用本地指令处理。"
+        return decision
     except ValueError as exc:return result("answer",str(exc) if str(exc) and not str(exc).startswith("invalid literal") else "请输入整数笔数、箱数及保留资金百分比。")
 
 
@@ -420,5 +451,7 @@ def review_result(text,history,context,observation,ask):
             if re.search(NEGATE+"|"+EDUCATE,plain(text)) or not re.search(EXECUTE if tool=="start" else RESUME,plain(text)):
                 return result("answer")
         return decision
+    except ModelProviderError as exc:
+        return result("answer",f"模型解读终端回执时遇到问题。{exc}")
     except (ValueError,TypeError,KeyError,RuntimeError,OSError):
         return result("answer")

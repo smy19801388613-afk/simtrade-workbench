@@ -81,7 +81,7 @@ def domestic_order(case):
                 delivery_date=d["delivery_deadline"])
 
 
-def advance(platform, directory, *, through="completed", progress=print):
+def advance(platform, directory, *, through="completed", progress=print, before_claim=None):
     d=Path(directory);p=d/"job.json"
     stages=["quoted","contracted","supplied","shipped","completed"]
     if through not in stages:raise ValueError("未知阶段。")
@@ -135,11 +135,15 @@ def advance(platform, directory, *, through="completed", progress=print):
                     finish("shipped")
                 else:
                     from settlement import settle_trade
-                    result=settle_trade(platform,c,b,d)
+                    result=settle_trade(platform,c,b,d,previous_attention=j.get("attention"),before_claim=before_claim)
                     if result["status"]!="completed":raise ValueError(str(result.get("reason") or "结算状态待核对。"))
                     j["settlement"]=result
                     j["closing"]={k:platform.snapshot(v,k) for k,v in accounts_for(c).items()}
                     finish("completed")
+                    if result.get("claim_settled"):
+                        payout=result["evidence"]["importer"].get("claim_credit")
+                        if payout:
+                            progress(f"保险索赔已结案，进口商收到 {payout['income']}。")
         except (Exception,KeyboardInterrupt) as exc:
             j["attention"]={"stage":j["stage"],"message":str(exc)[:800],"at":datetime.now().isoformat(timespec="seconds")}
             write(p,j);raise

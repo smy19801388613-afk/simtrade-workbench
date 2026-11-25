@@ -87,7 +87,7 @@ def _pause_note(job):
 
 
 def _audit(data, base, accounts, contract):
-    if (not isinstance(accounts, list) or not 1 <= len(accounts) <= 3
+    if (not isinstance(accounts, list) or not 1 <= len(accounts) <= 10
             or not all(isinstance(a,str) and re.fullmatch(r"[A-Za-z0-9_-]{1,40}",a) for a in accounts)
             or len(set(accounts)) != len(accounts) or not isinstance(base,str) or not base):
         raise ValueError("请先连接本次交易所用的学校与账号组合。")

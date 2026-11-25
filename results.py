@@ -2,7 +2,7 @@
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import re
 
-from settlement import _sale_rows
+from settlement import CLAIM_ITEMS, _sale_rows
 
 
 _ROLES = ("exporter", "importer", "factory")
@@ -178,7 +178,7 @@ def summarize(job):
                 good = bool(sale) or any(k in {"销售收入","销货收入","商品销售收入","销售货款"} for k in credits)
                 basis = "匹配商品和数量的实际销货收入，加减该合同日记账归集的各项收支。"
             else:
-                good = branch == "insured_loss" and any(k in {"货物保险金","保险赔款","保险赔付","保险赔偿金"} for k in credits)
+                good = branch == "insured_loss" and any(k in CLAIM_ITEMS for k in credits)
                 basis = "按合同记载的保险赔款以及本单收支计算。"
             if fees_complete and good:
                 out.update(actual_profit=_money(net), profit_basis=basis)

@@ -69,17 +69,17 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(403,{"error":"页面连接已过期，请刷新本机工作台。"})
         if self.headers.get_content_type()!="application/json":
             return self.respond(415,{"error":"请发送 JSON。"})
-        if self.path not in {"/api/"+p for p in ("login","logout","refresh","model","preview","start","resume","chat","chat-action")}:
+        if self.path not in {"/api/"+p for p in ("login","logout","remembered-accounts","forget-accounts","refresh","model","preview","start","resume","chat","chat-action")}:
             return self.respond(404,{"error":"找不到操作。"})
         try:
             length=int(self.headers.get("Content-Length","0"))
             if not 0<length<=32768:raise ValueError("请求长度超出范围。")
             payload=json.loads(self.rfile.read(length))
             if not isinstance(payload,dict):raise ValueError("请求格式有误。")
-            self.session.dispatch(self.path.rsplit("/",1)[1],payload)
+            result = self.session.dispatch(self.path.rsplit("/",1)[1],payload)
         except (ValueError,TypeError) as exc:
             return self.respond(400,{"error":str(exc)})
-        self.respond(200,{"accepted":True})
+        self.respond(200,{"accepted":True} if result is None else result)
 
 
 def serve(data, port=0, *, open_browser=True):
@@ -104,12 +104,13 @@ def main():
         if "--terminal" in sys.argv:sys.argv.remove("--terminal")
         workbench.main()
         return
+    from workbench import VERSION, default_data
     parser=argparse.ArgumentParser(description="SIMtrade 本机工作台（--terminal 进入纯终端菜单）")
+    parser.add_argument("--version", action="version", version="SIMtrade v"+VERSION)
     parser.add_argument("--no-browser",action="store_true",help="只启动本机服务，手动打开终端显示的地址")
     parser.add_argument("--port",type=int,default=0,help="本机端口，默认自动选择空闲端口")
     parser.add_argument("--data",type=Path,help="存档目录，终端与可视界面共用")
     args=parser.parse_args()
-    from workbench import default_data
     serve((args.data or default_data()).resolve(),args.port,open_browser=not args.no_browser)
 
 

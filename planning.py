@@ -1,7 +1,8 @@
 """Quote an ocean trade using the selected terms, payment and each role's cash floor."""
+from collections import Counter
 from datetime import date, timedelta, datetime
 from decimal import Decimal as D
-from itertools import tee
+from itertools import permutations, tee
 from secrets import token_hex
 
 from market import alternate_ports, import_inspection_required, lookup
@@ -11,13 +12,155 @@ from wording import words_usd, cn_money
 
 def rotation(accounts, focus=None):
     ids=list(dict.fromkeys(accounts))
-    if not 1 <= len(ids) <= 3: raise ValueError("请输入 1 至 3 个不同的账号。")
+    if not 1 <= len(ids) <= 10: raise ValueError("请输入 1 至 10 个不同的账号。")
     if focus:
         if focus not in ids: raise ValueError("优先账号不在本轮名单中。")
         ids=[focus]+[a for a in ids if a!=focus]
     # These are independent business roles. The platform finally decides whether a pairing is offered.
     if len(ids)==1:return [(ids[0],ids[0],ids[0])]
     return [(ids[i],ids[(i+1)%len(ids)],ids[(i-1)%len(ids)]) for i in range(len(ids))]
+
+
+def _match_partners(ids, anchors, history, *, reverse=False, factory_buyers=None):
+    """Assign each partner once in a complete round.
+
+    The best partial assignment depends only on the set of partners already used.
+    Tracking those sets gives O(n² 2ⁿ) work for at most ten accounts.
+    """
+    zero = (0, 0)
+    states = {0: (zero, ())}
+    size = len(ids)
+    # Use the original forward buyer / backward supplier order to break ties.
+    step = -1 if reverse or factory_buyers is not None else 1
+    for anchor in anchors:
+        options = []
+        start = ids.index(anchor)
+        for offset in range(1, size):
+            index = (start + step * offset) % size
+            partner = ids[index]
+            if factory_buyers is not None and size > 2 and factory_buyers[anchor] == partner:
+                continue
+            pair = (partner, anchor) if reverse else (anchor, partner)
+            uses = history[pair]
+            cost = (int(uses > 0), uses)
+            options.append((1 << index, partner, cost))
+
+        next_states = {}
+        for mask, (score, chosen) in states.items():
+            for bit, partner, cost in options:
+                if mask & bit:
+                    continue
+                new_mask = mask | bit
+                new_score = (score[0] + cost[0], score[1] + cost[1])
+                if new_mask not in next_states or new_score < next_states[new_mask][0]:
+                    next_states[new_mask] = (new_score, chosen + (partner,))
+        states = next_states
+    return states[(1 << size) - 1][1]
+
+
+def _partial_round(ids, slots, sales, purchases, activity, gaps, focus, focus_role):
+    """Fill a partial round while still giving each role to distinct accounts.
+
+    A highly ranked triple can leave the last slot without three eligible parties.
+    Backtrack only when a choice would prevent allocating the requested slots.
+    """
+    size = len(ids)
+    indices = {account: i for i, account in enumerate(ids)}
+    candidates = permutations(ids, 3) if size > 2 else [(ids[0],ids[1],ids[1]), (ids[1],ids[0],ids[0])]
+
+    def priority(roles):
+        seller, buyer, factory = roles
+        trade = sales[seller, buyer]
+        procurement = purchases[seller, factory]
+        participation = sum(counts[a] for counts, a in zip(activity, roles))
+        level_gap = sum(gap.get(a, 0) for gap, a in zip(gaps, roles))
+        return (trade, participation, procurement, -level_gap, indices[seller],
+                (indices[buyer] - indices[seller]) % size, (indices[seller] - indices[factory]) % size)
+
+    candidates = sorted(candidates, key=priority)
+    focused_index = 1 if focus_role == "importer" else 0
+
+    def fill(rows, sellers, buyers, factories):
+        if len(rows) == slots:
+            return rows
+        for roles in candidates:
+            seller, buyer, factory = roles
+            if seller in sellers or buyer in buyers or factory in factories:
+                continue
+            if not rows and focus and roles[focused_index] != focus:
+                continue
+            result = fill(rows+[roles], sellers|{seller}, buyers|{buyer}, factories|{factory})
+            if result is not None:
+                return result
+        return None
+
+    return fill([], set(), set(), set())
+
+
+def participant_plan(accounts, count, history, focus=None, focus_role="importer", *, snapshots=()):
+    """Plan balanced rounds using completed contracts and the pairs scheduled so far."""
+    ids = list(accounts)
+    if not 1 <= len(ids) <= 10 or len(set(ids)) != len(ids):
+        raise ValueError("请输入 1 至 10 个不同的账号。")
+    if type(count) is not int or not 1 <= count <= 100:
+        raise ValueError("订单数须为 1 至 100 的整数。")
+    if (focus and focus not in ids) or focus_role not in ("importer", "exporter"):
+        raise ValueError("请选择已连接账号的进口商或出口商作为优先角色。")
+    if len(ids) == 1:
+        return [(ids[0], ids[0], ids[0])] * count
+
+    exports, imports, production = Counter(), Counter(), Counter()
+    sales, purchases = Counter(), Counter()
+    gaps = []
+    for role in ("exporter", "importer", "factory"):
+        levels = {s["account"]: s["level"] for s in snapshots if s.get("role") == role
+                  and s.get("account") in ids and type(s.get("level")) is int}
+        high = max(levels.values(), default=0)
+        gaps.append({account: high - level for account, level in levels.items()})
+
+    def record(seller, buyer, factory):
+        if seller:
+            exports[seller] += 1
+        if buyer:
+            imports[buyer] += 1
+        if factory:
+            production[factory] += 1
+        if seller and buyer:
+            sales[seller, buyer] += 1
+        if seller and factory:
+            purchases[seller, factory] += 1
+
+    for job in history:
+        if job.get("stage", "completed") != "completed":
+            continue
+        case = job.get("case", {})
+        seller = case.get("seller_account")
+        factory = case.get("domestic", {}).get("factory_account")
+        if job.get("kind", "foreign") == "foreign":
+            record(seller, case.get("buyer_account"), factory)
+        elif job.get("kind") == "purchase" and seller and factory:
+            production[factory] += 1
+            purchases[seller, factory] += 1
+
+    plan = []
+    while len(plan) < count:
+        slots = min(len(ids), count - len(plan))
+        if slots < len(ids):
+            plan.extend(_partial_round(ids, slots, sales, purchases, (exports,imports,production),
+                                       gaps, focus, focus_role))
+            break
+        if focus and focus_role == "importer":
+            buyers = sorted(ids, key=lambda a: (a != focus, imports[a], -gaps[1].get(a, 0)))
+            sellers = _match_partners(ids, buyers, sales, reverse=True)
+        else:
+            sellers = sorted(ids, key=lambda a: (a != focus, exports[a], -gaps[0].get(a, 0)))
+            buyers = _match_partners(ids, sellers, sales)
+        factories = _match_partners(ids, sellers, purchases,
+                                    factory_buyers=dict(zip(sellers, buyers)))
+        for roles in zip(sellers, buyers, factories):
+            plan.append(roles)
+            record(*roles)
+    return plan
 
 
 def party(p, importer):
@@ -100,9 +243,9 @@ def new_job(platform, ids, actors, product_id="17001", cartons=3, floor_percent=
     minimum_units = 1 if inspection else per_carton
     if available["factory"] < D(q(cost * minimum_units)):
         minimum = "一台" if inspection else "一箱"
-        raise ValueError(f"工厂保留资金后不足以生产{minimum}商品。请核对工厂余额或本轮保留比例。")
+        raise UnprofitableQuote(f"工厂保留资金后不足以生产{minimum}商品。请核对工厂余额或本轮保留比例。")
     if available["exporter"] <= 0 or available["importer"] <= 0:
-        raise ValueError("进出口商保留资金后缺少可用于本单的余额。请核对角色资金或保留比例。")
+        raise UnprofitableQuote("进出口商保留资金后缺少可用于本单的余额。请核对角色资金或保留比例。")
     quantity_groups = []
     if available["factory"] >= D(q(cost * per_carton)):
         quantity_groups.append(range(cartons * per_carton, 0, -per_carton))
@@ -120,7 +263,7 @@ def new_job(platform, ids, actors, product_id="17001", cartons=3, floor_percent=
             break
     else:
         scope = f"指定目的港 {port}" if port else f"{quote['country']} 可用的 {tried} 个目的港"
-        raise ValueError(f"已试算{scope}，在本轮箱数、报价和保留资金条件下均无法成交。最后一次试算：{failure}。")
+        raise UnprofitableQuote(f"已试算{scope}，在本轮箱数、报价和保留资金条件下均无法成交。最后一次试算：{failure}。")
     start=date.today(); until=(start+timedelta(days=21)).isoformat(); suffix=start.strftime("%y%m%d")+token_hex(3).upper()
     ct="WB"+suffix; dc="WD"+suffix; pk=b["packing"]; tax=p["tax"]
     product=dict(p,quantity=b["quantity"],cartons=pk["cartons"],gross_kg=pk["gross_kg"],

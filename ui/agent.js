@@ -23,6 +23,8 @@ window.workbenchChat = (() => {
   }
   function controls() {
     const thinking = !!lastState?.agent?.busy;
+    const analyze=el('analyze-failure');
+    if(analyze)analyze.disabled=submitting||thinking;
     el('chat-thinking').hidden = !thinking;
     el('chat-send').disabled = !lastState || thinking || submitting || !input.value.trim();
     pending.querySelectorAll('button').forEach(button => {
@@ -96,15 +98,14 @@ window.workbenchChat = (() => {
     scope=nextScope;lastState=s;
     const wasAtEnd=scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<65;
     const agent=s.agent||{};
-    el('agent-mode').textContent=agent.mode==='model'?'模型已连接 · 设置':'本地模式 · 模型设置';
+    el('agent-mode').textContent=agent.mode==='model'?(s.model_name||'模型已连接')+' · 设置':'本地模式 · 模型设置';
     suggestions(s);
     const changed=renderMessages(agent.messages||[]);
     const planChanged=renderPending(agent.pending);
     controls();
     if(drawer.open && (planChanged || (changed && wasAtEnd)))scroll.scrollTop=scroll.scrollHeight;
   }
-  async function send() {
-    const text=input.value.trim();
+  async function send(text=input.value.trim()) {
     if(!text || !lastState || submitting || lastState.agent?.busy)return;
     if(!retry||retry.text!==text)retry={text,id:crypto.randomUUID()};
     const attempt=retry;
@@ -125,6 +126,12 @@ window.workbenchChat = (() => {
     catch(err){error(err.message);try{await refresh();}catch{}}
     finally{submitting=false;controls();}
   }
+  async function analyzeFailure() {
+    const task=lastState?.task;
+    if(task?.status!=='error'||!['start','resume'].includes(task.kind)||submitting||lastState?.agent?.busy)return;
+    if(!drawer.open)drawer.showModal();
+    await send('根据当前任务回执，这笔交易为什么中断？请解释原因，并建议下一步核对哪项单据。');
+  }
   el('open-agent').addEventListener('click',async()=>{
     if(!drawer.open)drawer.showModal();
     input.focus();
@@ -141,5 +148,5 @@ window.workbenchChat = (() => {
   });
   el('chat-compose').addEventListener('submit',event=>{event.preventDefault();send();});
   controls();
-  return {render};
+  return {render,analyzeFailure};
 })();

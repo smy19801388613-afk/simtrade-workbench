@@ -58,7 +58,8 @@ class WorkbenchAgent:
     def say(self,role,text,tool=None):
         text=self.clean(text,structured=role=="tool").strip()
         if not text:return
-        item=dict(id=token_urlsafe(8),role=role,text=text[:12000])
+        # Server-generated quote rows are bounded by the order limit; keep the last order visible.
+        item=dict(id=token_urlsafe(8),role=role,text=text if (role=="tool" and tool=="preview") else text[:12000])
         if tool:item["tool"]=tool
         self.messages.append(item)
 
@@ -83,13 +84,17 @@ class WorkbenchAgent:
             ct=o["contract"]
             if ct not in self.job_alias:self.job_alias[ct]=f"J{len(self.job_alias)+1}"
         replacements={**self.job_alias,**accounts}
+        aliases=None
+        if replacements:
+            keys=sorted(replacements,key=len,reverse=True)
+            aliases=re.compile(r"(?<![A-Za-z0-9_])(?:"+"|".join(re.escape(k) for k in keys)+r")(?![A-Za-z0-9_])")
         def anon(value):
             if isinstance(value,list):return [anon(x) for x in value]
             if isinstance(value,dict):return {k:anon(v) for k,v in value.items()}
             if not isinstance(value,str):return value
             value=self.clean(value,structured=True)
-            for raw,alias in sorted(replacements.items(),key=lambda item:-len(item[0])):
-                value=re.sub(r"(?<![A-Za-z0-9_])"+re.escape(raw)+r"(?![A-Za-z0-9_])",lambda _:alias,value)
+            if aliases:
+                value=aliases.sub(lambda match:replacements[match[0]],value)
             # Unknown student numbers occasionally occur inside school's free-text prompts.
             value=re.sub(r"(?<!\d)20\d{7}(?!\d)","[其他账号]",value)
             value=re.sub(r"(?i)(?<![A-Z0-9])W[BD]\d[A-Z0-9_-]{3,}(?![A-Z0-9])","[其他合同]",value)
@@ -142,6 +147,8 @@ class WorkbenchAgent:
                 decision=plan(prompt,history,ctx,ask)
                 with self.session.lock:
                     if not self.current(scope):return
+                    if decision.get("notice"):
+                        self.say("assistant",decision["notice"])
                     tool=decision["tool"]
                     args=decision.get("args") or {}
                     if tool not in ("terminal_check","terminal_audit"):
@@ -221,8 +228,8 @@ class WorkbenchAgent:
                 if params.get("focus"):
                     if params["focus"] not in reverse:raise ValueError("请选择已连接的账号作为优先角色。")
                     params["focus"]=reverse[params["focus"]]
-                params.setdefault("product",next(iter(PRODUCTS)))
-                params.setdefault("product_scope","verified" if params["product"] in VERIFIED_PRODUCTS else "all")
+                params.setdefault("product","AUTO")
+                params.setdefault("product_scope","verified" if params["product"] in ("AUTO",*VERIFIED_PRODUCTS) else "all")
                 params["closing_mail"]=False
             s.dispatch(tool,params)
             self.watching[s.task["id"]]=(tool,request)

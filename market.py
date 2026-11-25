@@ -1,4 +1,5 @@
 """Read the selected school's student-facing catalogue, market, FX and port pages."""
+from collections import Counter
 from decimal import Decimal as D, InvalidOperation
 from functools import lru_cache
 import json
@@ -29,10 +30,35 @@ def product_pool(scope):
 
 def product_rotation(scope, first, count):
     products = product_pool(scope)
+    if first == "AUTO":
+        return [first] * count
     if first not in products:
         raise ValueError("起始商品须属于本次选择的商品组。")
     start = products.index(first)
     return [products[(start + index) % len(products)] for index in range(count)]
+
+
+def ranked_products(scope, actors, history):
+    """Rank the catalogue for this particular exporter, importer and factory."""
+    exposure = Counter()
+    totals = Counter()
+    for job in history:
+        case = job["case"]
+        product = (case.get("product") or {}).get("id")
+        if not product:
+            continue
+        participants = (case.get("seller_account"), case.get("buyer_account"),
+                        (case.get("domestic") or {}).get("factory_account"))
+        for role, account in enumerate(participants):
+            if account is not None:
+                exposure[role, account, product] += 1
+        totals[product] += 1
+
+    def rank(product):
+        counts = [exposure[role, account, product] for role, account in enumerate(actors)]
+        return sum(count > 0 for count in counts), max(counts), sum(counts), totals[product]
+
+    return sorted(product_pool(scope), key=rank)
 
 
 def import_inspection_required(product):

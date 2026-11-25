@@ -6,17 +6,20 @@ import re
 import sys
 from secrets import token_hex
 
+from account_memory import AccountMemory
 from live_platform import DEFAULT_SCHOOL_URL, LivePlatform, ROLES, archive_origins
-from market import PRODUCTS, PortSelectionError, product_pool, product_rotation
+from market import PRODUCTS, PortSelectionError, product_pool, product_rotation, ranked_products
 from pipeline import read, write, store_new, advance, run_lock
-from planning import rotation, new_job
+from planning import participant_plan, new_job
+from pricing import UnprofitableQuote
 from results import summarize
 from supply_mode import plan_supply, execute_supply
 from correspondence import read_inbox, send_closing
 from live_recovery import inspect_exception
-from model_provider import ask_model
-from trade_modes import AUTOMATIC_PAIRS, observed_history, pick_route
+from model_provider import DEEPSEEK_BASE, DEEPSEEK_MODEL, ask_model, verify_connection
+from trade_modes import AUTOMATIC_PAIRS, observed_history, partner_history, pick_route
 
+VERSION = "1.3.3"
 LABEL={"exporter":"出口商","importer":"进口商","factory":"工厂"}
 STAGES={"quoted":"待执行报价","contracted":"外贸合同已确认","supplied":"国内已交货","shipped":"已装运交单","completed":"已结案"}
 
@@ -34,12 +37,54 @@ def choose(items, prompt):
     return items[integer(prompt,1,1,len(items))-1][1]
 
 
-def login(account_text,base):
+def login(account_text,base, *, saved=None, remember_in=None):
     ids=[x for x in re.split(r"[,，\s]+",account_text.strip()) if x]
-    if not 1<=len(ids)<=3 or len(set(ids))!=len(ids) or any(not re.fullmatch(r"[A-Za-z0-9_-]{1,40}",a) for a in ids):
-        raise ValueError("请输入 1–3 个不同账号，以空格或逗号分开。")
-    auth={a:getpass(f"账号 {a} 的密码（可留空）：") for a in ids}
-    return LivePlatform(base,auth),ids
+    if not 1<=len(ids)<=10 or len(set(ids))!=len(ids) or any(not re.fullmatch(r"[A-Za-z0-9_-]{1,40}",a) for a in ids):
+        raise ValueError("请输入 1–10 个不同账号，以空格或逗号分开。")
+    saved = saved or {}
+    auth = {a: saved[a] if a in saved else getpass(f"账号 {a} 的密码（可留空）：") for a in ids}
+    platform = LivePlatform(base, auth)
+    if remember_in is not None:
+        for account in ids:
+            platform.session(account, "exporter")
+        try:
+            remember_in.save(base, auth)
+        except (ValueError, OSError) as exc:
+            print(f"本次已登录，本机账号记忆保存失败。{exc}")
+        else:
+            print("已在本机记住这组账号。")
+    return platform, ids
+
+
+def terminal_login(base, data):
+    memory = AccountMemory(data)
+    try:
+        accounts = memory.accounts(base) if memory.available else []
+    except (ValueError, OSError) as exc:
+        print(f"无法读取本机账号记忆，可以手动登录。{exc}")
+        accounts = []
+    while True:
+        if accounts:
+            print("本校已记住的账号：" + "、".join(accounts))
+        hint = "，回车使用已记住的账号，输入账号可重填密码" if accounts else ""
+        forget = "，输入 忘记 可清除本校账号" if memory.available else ""
+        entry = input(f"输入账号（以空格分开{hint}{forget}，0 退出）：").strip()
+        if entry == "0" or not (entry or accounts):
+            return None
+        if entry == "忘记" and memory.available:
+            memory.forget(base)
+            accounts = []
+            print("已清除本校记住的账号和密码。")
+            continue
+        if not entry:
+            try:
+                saved = memory.credentials(base, accounts)
+            except (ValueError, OSError) as exc:
+                print(f"无法读取已保存的密码，请重新输入。{exc}")
+                saved = {}
+            return login(" ".join(accounts), base, saved=saved)
+        remember = memory.available and input("输入 记住，在学校验证成功后保存或更新本校账号和密码（回车仅本次使用）：").strip() == "记住"
+        return login(entry, base, remember_in=memory if remember else None)
 
 
 def dashboard(platform,ids):
@@ -64,11 +109,16 @@ def preview(job):
 
 
 def api_settings():
-    ep=input("兼容 Chat Completions 的完整地址（回车关闭模型）：").strip()
+    ep=input("输入 1 使用 DeepSeek，或输入兼容服务的基础地址或完整接口（回车关闭模型）：").strip()
     if not ep:return None
-    model=input("模型名：").strip();key=getpass("API Key（本机免密服务可留空）：")
+    if ep=="1": ep=DEEPSEEK_BASE
+    model=input(f"模型名（DeepSeek 可回车使用 {DEEPSEEK_MODEL}）：").strip()
+    key=getpass("API Key（本机免密服务可留空）：").strip()
+    print("正在发送一条简短消息，测试模型连接。")
+    model=verify_connection(ep,model,key)
+    print(f"模型 {model} 已通过对话测试。")
     print("模型仅收到临时角色别名、业务状态和候选动作。异常发生时最多调用三次。")
-    return lambda msgs:ask_model(ep,model,key,msgs)
+    return lambda msgs:ask_model(ep,model,key,msgs,structured=True)
 
 
 def print_result(job, emit=print):
@@ -94,11 +144,17 @@ def drive(platform, directory, ask, emit=print):
         final=advance(platform,directory,progress=lambda t:emit(f"{directory.name}　{STAGES.get(t.split()[-1],t)}"))
     except Exception:
         if ask is None:raise
+        emit("自动办理已暂停，正在请模型核对合同。")
         with run_lock(directory.parent):
             status,history,evidence=inspect_exception(platform,directory,ask)
         for decision,action,why in history:emit(" ".join(("模型",decision,action or "",why)))
         for line in evidence:emit(line)
-        if status!="resume_rules":raise
+        if status!="resume_rules":
+            if status=="model_unavailable_or_invalid":
+                emit("模型未能给出有效答复，可在连接设置中测试模型后续办原合同。")
+            elif status in ("reconcile_first","no_supported_action","no_progress","call_limit","state_changed"):
+                emit("当前凭据不足以自动续办，合同保留在原进度。")
+            raise
         # One verified reconciliation only. The ordinary executor rechecks its journal.
         final=advance(platform,directory,progress=emit)
     print_result(final, emit)
@@ -117,43 +173,57 @@ def scope_jobs(data,platform,ids):
     return sorted(ret,key=lambda x:x[1].get("created",""),reverse=True)
 
 
+def quote_product(platform, ids, actors, product, scope, history, cartons, floor, emit, **options):
+    candidates = ranked_products(scope, actors, history) if product == "AUTO" else [product]
+    for candidate in candidates:
+        emit(f"核对{PRODUCTS[candidate][0]}的行情、运费和三方余额")
+        try:
+            return new_job(platform, ids, actors, candidate, cartons, floor, **options)
+        except UnprofitableQuote as error:
+            if product != "AUTO":
+                raise
+            emit(f"{PRODUCTS[candidate][0]}：{error}")
+    raise UnprofitableQuote("所选商品组均未找到满足利润和资金保留条件的报价，请核对预算。")
+
+
 def new_round(platform,ids,data,ask):
-    order=rotation(ids)
+    focus=None
     if len(ids)>1:
-        focus=choose([("均衡轮换",None)]+[(f"先做 {a} 的进口业务",a) for a in ids],"本轮目标")
-        if focus:order.sort(key=lambda roles:roles[1]!=focus)
-    n=integer("本轮订单数（最多 12 笔）",len(order),1,12)
+        focus=choose([("均衡轮换交易对象",None)]+[(f"先做 {a} 的进口业务",a) for a in ids],"本轮目标")
+    n=integer("本轮订单数（最多 100 笔）",len(ids),1,100)
     route=AUTOMATIC_PAIRS[0]
     if len(AUTOMATIC_PAIRS)>1:
         route=choose([("按覆盖情况轮换",None),("逐笔指定组合","custom")]+[(f"{t} ＋ {p}",(t,p)) for t,p in AUTOMATIC_PAIRS],"履约路线")
+    past_jobs=[]
+    for path in data.glob("*/job.json"):
+        past=read(path)
+        if past.get("origin") in archive_origins(platform.base_url) and set(past.get("accounts",[])) & set(ids):
+            past_jobs.append(past)
+    snaps=[platform.snapshot(a,r) for a in ids for r in LABEL]
+    partners=partner_history(past_jobs,snaps)
+    participants=participant_plan(ids,n,partners,focus=focus,snapshots=snaps)
     history=[]
     if route is None:
         from diversity import read_current_method
-        for path in data.glob("*/job.json"):
-            past=read(path)
-            if past.get("origin") in archive_origins(platform.base_url) and past.get("stage")=="completed" and set(past.get("accounts",[])) & set(ids):
-                history.append(past)
-        snaps=[read_current_method(platform,platform.snapshot(a,r),data)
-               for a in ids for r in ("exporter","importer")]
-        history=observed_history(history,snaps)
+        history=observed_history(past_jobs,[read_current_method(platform,s,data) for s in snaps])
     scope=choose([("已结案商品","verified"),("全部商品","all")],"商品轮换范围")
-    first=choose([(f"{sku}  {PRODUCTS[sku][0]}",sku) for sku in product_pool(scope)],"第一笔商品")
+    first=choose([("按三方历史均衡选品","AUTO")]+[(f"{sku}  {PRODUCTS[sku][0]}",sku) for sku in product_pool(scope)],"选品方式或第一笔商品")
     products=product_rotation(scope,first,n)
     carton=integer("每笔最多箱数",3,1,100)
     floor=integer("每个角色至少保留当前现金的百分之几",70,0,100)
     quotes=[]
-    for i in range(n):
-        roles=order[i%len(order)]
+    for i,roles in enumerate(participants):
         if route=="custom":
             pair=choose([(f"{t} ＋ {p}",(t,p)) for t,p in AUTOMATIC_PAIRS],f"第 {i+1} 笔的条款")
         else:pair=route or pick_route(roles,history+quotes)
         options={"terms":pair[0],"payment":pair[1]}
         product=products[i]
         print("正在读取当期货价、关税、目的港和角色余额……",flush=True)
-        try:j=new_job(platform,ids,roles,product,carton,floor,**options)
+        try:j=quote_product(platform,ids,roles,product,scope,partners+quotes,carton,floor,print,**options)
         except PortSelectionError as exc:
             print(exc)
-            j=new_job(platform,ids,roles,product,carton,floor,input("输入本笔英文目的港：").strip(),**options)
+            port=input("输入本笔英文目的港：").strip()
+            j=quote_product(platform,ids,roles,product,scope,partners+quotes,carton,floor,print,port=port,**options)
         preview(j);quotes.append(j)
     notify=input("每单结案后，自动给本单进口商发送一封结款确认函？[y/N]：").strip().lower()=="y"
     if input(f"以上 {n} 笔将正式签约、采购、收付并结案。输入 开始 执行：").strip()!="开始":return
@@ -239,6 +309,7 @@ def default_data():
 
 def main():
     parser=argparse.ArgumentParser(description="SIMtrade 终端工作台")
+    parser.add_argument("--version", action="version", version="SIMtrade v"+VERSION)
     parser.add_argument("--data",type=Path,help="保存合同和收据的位置，默认程序旁的 工作台数据")
     parser.add_argument("--self-check",action="store_true",help="离线验证打包依赖及本地模型接管流程")
     args=parser.parse_args()
@@ -252,13 +323,14 @@ def main():
         if not port_catalogue():raise RuntimeError("目的港目录为空")
         print("工作台自检通过。");return
     data=(args.data or default_data()).resolve()
-    print("SIMtrade 实训工作台\n支持 1–3 个学生账号 · 常规交易使用本地规则 · 0 退出")
-    first=input("输入账号（以空格分开，0 退出）：").strip()
-    if first in ("","0"):return
+    print(f"SIMtrade 实训工作台 v{VERSION}\n支持 1–10 个学生账号 · 常规交易使用本地规则 · 0 退出")
     saved=school_address(data)
-    base=input(f"学校平台地址 [{saved}]：").strip() or saved
+    base=input(f"学校平台地址 [{saved}]（0 退出）：").strip() or saved
+    if base == "0":return
     print("本次登录地址："+base)
-    platform,ids=login(first,base)
+    session = terminal_login(base, data)
+    if session is None:return
+    platform, ids = session
     data.mkdir(parents=True,exist_ok=True);print("存档位置："+str(data))
     console(platform,ids,data)
 

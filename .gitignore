@@ -12,7 +12,15 @@
 !/tests/test_domestic_description.py
 !/tests/test_device_quote.py
 !/tests/test_import_inspection.py
+!/tests/test_delivery_claim.py
+!/tests/test_model_connection.py
+!/tests/test_recovery_alias.py
+!/tests/test_account_memory.py
+!/tests/test_remembered_login.py
+!/tests/test_terminal_memory.py
 !/tests/test_products.py
+!/tests/test_partner_rotation.py
+!/tests/test_partner_history.py
 !/ui/
 !/docs/
 /docs/*

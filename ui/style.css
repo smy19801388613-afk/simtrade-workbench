@@ -43,3 +43,6 @@ main{min-width:0;outline:0}.topline{height:64px;padding:0 clamp(22px,3.5vw,58px)
 .btn:disabled,.btn:disabled:hover,.field :is(input,select):disabled,.filter:disabled{
   color:#665854;background:#ede7e3;border-color:#c4b5ae;opacity:1
 }
+.memory-switch{border:0;background:transparent;padding:0;font-size:12px;line-height:1.4}
+#settings-memory-error:not(:empty){margin:12px 0}
+#settings-memory-error + button:not([hidden]){margin-top:12px}

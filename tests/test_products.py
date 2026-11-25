@@ -1,9 +1,37 @@
 import unittest
+from unittest.mock import patch
 
-from market import PRODUCTS, import_inspection_required, product_pool, product_rotation
+from market import PRODUCTS, import_inspection_required, product_pool, product_rotation, ranked_products
+from pricing import UnprofitableQuote
+from workbench import quote_product
 
 
 class ProductSelectionTests(unittest.TestCase):
+    def test_each_role_influences_automatic_product_selection(self):
+        actors = ("A","B","C")
+        for seller,buyer,factory in (("A","Y","Z"),("X","B","Z"),("X","Y","C")):
+            with self.subTest(seller=seller,buyer=buyer,factory=factory):
+                job={"case":{"seller_account":seller,"buyer_account":buyer,"domestic":{"factory_account":factory},
+                             "product":{"id":"17001"}}}
+                ranked=ranked_products("verified",actors,[job])
+                self.assertEqual(ranked[-1],"17001")
+                self.assertCountEqual(ranked, product_pool("verified"))
+        self.assertEqual(product_rotation("verified","AUTO",2),["AUTO","AUTO"])
+
+    def test_auto_tries_another_product_only_after_an_economic_rejection(self):
+        args=(None,["A","B","C"],("A","B","C"),"AUTO","verified",[],1,70,lambda msg:None)
+        with patch("workbench.new_job",side_effect=[UnprofitableQuote("预算不足"),"ok"]) as generate:
+            self.assertEqual(quote_product(*args),"ok")
+            self.assertEqual([call.args[3] for call in generate.call_args_list],["17001","03001"])
+        with patch("workbench.new_job",side_effect=ValueError("会话失效")) as generate:
+            with self.assertRaisesRegex(ValueError,"会话失效"):
+                quote_product(*args)
+            self.assertEqual(generate.call_count,1)
+        with patch("workbench.new_job",side_effect=UnprofitableQuote("预算不足")) as generate:
+            with self.assertRaisesRegex(UnprofitableQuote,"预算不足"):
+                quote_product(*args[:3],"17001",*args[4:])
+            self.assertEqual(generate.call_count,1)
+
     def test_verified_batch_wraps_to_the_first_completed_product(self):
         verified = ("17001", "03001", "13001", "15002", "19001", "21003", "25002")
         self.assertEqual(product_pool("verified"), verified)

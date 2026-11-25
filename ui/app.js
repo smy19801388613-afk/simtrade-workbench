@@ -1,4 +1,5 @@
 'use strict';
+const maxAccounts=10, maxOrders=100;
 const byId = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const roleName = {exporter:'出口商', importer:'进口商', factory:'工厂'};
@@ -42,17 +43,99 @@ async function mutate(path, payload, message){
   finally{runningRequest=false;updateControls();clearTimeout(schedule);schedule=setTimeout(poll,state?.task?.status==='running'||state?.agent?.busy?700:4000);}
 }
 function sessionCard(){
-  return '<section class="panel"><div class="section-head"><div><h2>连接实训账号</h2><p>输入本次参与业务的 1–3 个账号。密码仅在本次运行中使用。</p></div></div><form id="login" autocomplete="off"><div id="account-list"></div><div class="accounts-control"><button type="button" class="btn secondary small" id="add-account">＋ 添加账号</button></div><details class="server-box" open><summary>学校平台地址</summary><label class="field"><span>服务地址</span><input type="url" name="base" required value="'+esc(state.base)+'" placeholder="https://school.example/SIMtrade/" autocomplete="off"></label></details><div class="form-foot"><span class="hint">请使用能访问学校平台的网络。</span><button class="btn primary" data-lock>连接账号</button></div></form></section>';
+  const remember=state.remember_available?'<label class="check"><input type="checkbox" name="remember">在这台电脑记住账号和密码</label><p class="hint">连接成功后，由当前 Windows 用户加密保存。</p>':'';
+  return '<section class="panel"><div class="section-head"><div><h2>连接实训账号</h2><p>输入本次参与业务的 1–10 个账号。</p></div></div><form id="login" autocomplete="off"><details class="server-box" open><summary>学校平台地址</summary><label class="field"><span>服务地址</span><input type="url" name="base" required value="'+esc(state.base)+'" placeholder="https://school.example/SIMtrade/" autocomplete="off"></label></details><div id="account-list"></div><div class="accounts-control"><button type="button" class="btn secondary small" id="add-account">＋ 添加账号</button></div><div class="space">'+remember+'<p id="memory-error" class="hint" role="status" hidden></p></div><div class="form-foot">'+forgetButton()+'<button class="btn primary" data-lock>连接账号</button></div></form></section>';
 }
-function addAccount(){
-  const list=byId('account-list');if(!list||list.children.length>=3)return;
+function forgetButton(){
+  return '<button type="button" class="btn secondary small" data-action="forget-accounts" data-lock hidden>忘记本校账号和密码</button>';
+}
+function addAccount(savedId='',savedBase=''){
+  const list=byId('account-list');if(!list||list.children.length>=maxAccounts)return;
   const div=document.createElement('div');div.className='account-row';
-  div.innerHTML='<label class="field"><span class="account-label">学生账号</span><input name="account" type="text" placeholder="输入账号" maxlength="40" required autocomplete="off" autocapitalize="none" spellcheck="false"></label><label class="field"><span>密码</span><input name="password" type="password" placeholder="无密码可留空" autocomplete="off"></label><button type="button" class="icon-btn remove" aria-label="移除这一组账号">×</button>';
+  div.innerHTML='<label class="field"><span class="account-label">学生账号</span><input name="account" type="text" placeholder="输入账号" maxlength="40" required autocomplete="off" autocapitalize="none" spellcheck="false"></label><div class="field"><div class="row-between"><label>密码</label><button type="button" class="memory-switch link" hidden></button></div><input name="password" type="password" placeholder="无密码可留空" autocomplete="off"></div><button type="button" class="icon-btn remove" aria-label="移除这一组账号">×</button>';
+  const password=div.querySelector('[name=password]');
+  password.id='school-password-'+(++passwordFieldNumber);
+  div.querySelector('.row-between label').htmlFor=password.id;
+  if(savedId){
+    div.querySelector('[name=account]').value=savedId;
+    div.dataset.savedId=savedId;div.dataset.savedBase=savedBase;
+    updatePasswordHint(div);
+  }
   list.appendChild(div);syncAccounts();
 }
-function syncAccounts(){const rows=[...document.querySelectorAll('.account-row')];rows.forEach((r,i)=>{r.querySelector('.account-label').textContent=rows.length===1?'学生账号':'学生账号 '+(i+1);r.querySelector('.remove').hidden=rows.length===1;});byId('add-account').disabled=rows.length>=3;}
+let passwordFieldNumber=0;
+function updatePasswordHint(row){
+  const active=Boolean(row.dataset.savedId), useSaved=active&&!row.dataset.manualPassword;
+  row.querySelector('[name=password]').placeholder=useSaved?'将使用已记住的密码':'无密码可留空';
+  const button=row.querySelector('.memory-switch');
+  button.hidden=!active;
+  button.textContent=useSaved?'用空密码':'用已存密码';
+}
+function setMemoryNotice(form,ids,error=''){
+  form.querySelector('[data-action=forget-accounts]').hidden=!ids.length&&!error;
+  const notice=byId('memory-error');notice.textContent=error;notice.hidden=!error;
+}
+function fillSavedRows(form,ids){
+  byId('account-list').replaceChildren();
+  for(const id of ids)addAccount(id,form.dataset.school);
+  if(!ids.length)addAccount();
+  if(form.elements.remember)form.elements.remember.checked=Boolean(ids.length);
+}
+function changeSchool(form){
+  const base=form.elements.base.value.trim();
+  if(base===form.dataset.school)return;
+  form.dataset.school=base;
+  delete form.dataset.lookup;
+  for(const row of form.querySelectorAll('.account-row')){
+    row.querySelector('[name=password]').value='';
+    if(row.dataset.savedId)row.remove();
+  }
+  if(!form.querySelector('.account-row'))addAccount();
+  syncAccounts();setMemoryNotice(form,[]);
+  if(form.elements.remember)form.elements.remember.checked=false;
+}
+async function lookupSchool(form){
+  changeSchool(form);
+  const base=form.dataset.school;
+  if(!state.remember_available||!base||!form.elements.base.validity.valid)return;
+  const lookup=String(++lookupNumber);
+  form.dataset.lookup=lookup;
+  const touched=form.dataset.edits;
+  try{
+    const saved=await request('remembered-accounts',{base});
+    if(!form.isConnected||form.dataset.lookup!==lookup)return;
+    const ids=saved.accounts||[];
+    setMemoryNotice(form,ids,saved.remember_error);
+    if(ids.length&&form.dataset.edits===touched&&![...form.querySelectorAll('[name=password]')].some(el=>el.value)&&
+       [...form.querySelectorAll('[name=account]')].every(el=>!el.value))fillSavedRows(form,ids);
+  }catch(e){
+    if(form.isConnected&&form.dataset.lookup===lookup)setMemoryNotice(form,[],e.message);
+  }finally{
+    if(form.dataset.lookup===lookup)delete form.dataset.lookup;
+  }
+}
+let lookupNumber=0;
+function forgetSchool(form,base){
+  ask('忘记本校账号和密码','<p>将清除这个学校在本机保存的登录信息。</p>','忘记',async()=>{
+    if(!await mutate('forget-accounts',{base}))return;
+    if(form?.isConnected&&form.dataset.school===base){
+      delete form.dataset.lookup;
+      for(const row of form.querySelectorAll('.account-row')){
+        if(!row.dataset.savedId)continue;
+        if(!row.dataset.manualPassword)row.remove();
+        else{delete row.dataset.savedId;updatePasswordHint(row);}
+      }
+      if(!form.querySelector('.account-row'))addAccount();
+      syncAccounts();setMemoryNotice(form,[]);
+      if(form.elements.remember)form.elements.remember.checked=false;
+    }
+    feedback('已清除本校保存的账号和密码。');
+  });
+}
+function syncAccounts(){const rows=[...document.querySelectorAll('.account-row')];rows.forEach((r,i)=>{r.querySelector('.account-label').textContent=rows.length===1?'学生账号':'学生账号 '+(i+1);r.querySelector('.remove').hidden=rows.length===1;});byId('add-account').disabled=rows.length>=maxAccounts;}
 function loginView(){return '<div class="grid split">'+sessionCard()+'<aside class="panel dark"><h2>本次交易如何执行</h2><ol class="workflow"><li><i>01</i><div><strong>连接商业角色</strong><small>同一账号可分别作为出口商、进口商和工厂。</small></div></li><li><i>02</i><div><strong>核对报价与利润</strong><small>从学校读取行情，按各角色本币计算预算。</small></div></li><li><i>03</i><div><strong>由终端履约</strong><small>确认后依次办理签约、采购、发运和收付。</small></div></li></ol><div class="facts">本机保留存档 · 中断可续办</div></aside></div>';}
 function header(){
+  byId('workbench-version').textContent='· v'+state.version;
   const title=pages[page];document.title=title[0]+' · SIMtrade 工作台';
   byId('heading').textContent=title[0];byId('subtitle').textContent=title[1];
   document.querySelectorAll('.nav a').forEach(n=>{const on=n.dataset.page===page;n.classList.toggle('active',on);if(on)n.setAttribute('aria-current','page');else n.removeAttribute('aria-current');});
@@ -69,13 +152,28 @@ function render(){
   const route=pageId(), key=JSON.stringify([route,state.accounts,state.base,state.routes,state.products]);
   if(page!==route)feedback();
   page=route;header();
-  if(frame!==key){frame=key;image='';archiveFilter='';byId('view').innerHTML=skeleton();if(byId('login'))addAccount();if(byId('quote')){planFields();routeHint();fillPortChoices(byId('port-choices'));}}
+  if(frame!==key){
+    frame=key;image='';archiveFilter='';byId('view').innerHTML=skeleton();
+    const login=byId('login');
+    if(login){
+      login.dataset.school=state.base;
+      fillSavedRows(login,state.remembered_accounts||[]);
+      setMemoryNotice(login,state.remembered_accounts||[],state.remember_error);
+    }
+    if(byId('quote')){planFields();routeHint();fillPortChoices(byId('port-choices'));}
+  }
   const dynamic=byId('live-data');
   if(dynamic){
     const signature=JSON.stringify([state.task,state.preview,state.jobs,state.role_rows,archiveFilter,previewEdited,page]);
     if(signature!==image){image=signature;const open=[...dynamic.querySelectorAll('details[open][data-key]')].map(x=>x.dataset.key);const focused=document.activeElement;const focusId=dynamic.contains(focused)?focused.id:'';dynamic.innerHTML=dynamicView();dynamic.querySelectorAll('details[data-key]').forEach(el=>{el.open=open.includes(el.dataset.key)});if(focusId)byId(focusId)?.focus({preventScroll:true});}
   }
-  if(page==='settings'&&byId('model-status'))byId('model-status').textContent=state.model_enabled?'当前已启用':'当前已关闭';
+  if(page==='settings'&&byId('model-status')){
+    byId('model-status').textContent=state.model_enabled?'已连接 '+(state.model_name||'模型服务'):'当前使用本地模式';
+    byId('model-off').hidden=!state.model_enabled;
+    const forget=byId('view').querySelector('[data-action=forget-accounts]');
+    forget.hidden=!state.remembered_accounts?.length&&!state.remember_error;
+    byId('settings-memory-error').textContent=state.remember_error||'';
+  }
   renderTask();window.workbenchChat.render(state);updateControls();
 }
 function dynamicView(){
@@ -101,7 +199,8 @@ function renderTask(){
   const wasOpen=host.querySelector('details')?.open;
   const meta=error?'需要处理':done?'已完成':(t.total?t.done+' / '+t.total:'执行中');
   const logs=t.logs?.length?'<pre class="log">'+esc(t.logs.join('\n'))+'</pre>':'';
-  host.innerHTML='<details class="task-strip '+(error?'task-error':'')+'" '+(wasOpen?'open':'')+'><summary><b>'+esc(label)+'</b> <span>'+esc(meta)+'</span></summary>'+(t.message?'<p>'+esc(t.message)+'</p>':'')+logs+'</details>';
+  const analyze=error&&['start','resume'].includes(t.kind)?'<button type="button" id="analyze-failure" class="btn secondary small" data-action="analyze-failure">请 Agent 分析</button>':'';
+  host.innerHTML='<details class="task-strip '+(error?'task-error':'')+'" '+(wasOpen?'open':'')+'><summary><b>'+esc(label)+'</b> <span>'+esc(meta)+'</span></summary>'+(t.message?'<p>'+esc(t.message)+'</p>':'')+logs+analyze+'</details>';
   if(error)host.querySelector('details').open=true;
 }
 function syncControl(){
@@ -134,8 +233,8 @@ async function fillPortChoices(list){
     portCatalogueRequest=null;
   }
 }
-function productOptions(scope,selected){
-  return state.products.filter(p=>scope==='all'||p.verified)
+function productOptions(scope,selected='AUTO'){
+  return option('AUTO','按三方历史均衡选品',selected)+state.products.filter(p=>scope==='all'||p.verified)
     .map(p=>option(p.id,p.name+' · '+p.id,selected)).join('');
 }
 function tradeForm(){
@@ -147,10 +246,10 @@ function tradeForm(){
   const fields='<div class="fields">'+
     '<label class="field"><span>贸易术语</span><select name="terms" required>'+routeOptionList(termList,'ROTATE','自动轮换贸易术语')+'</select></label>'+
     '<label class="field"><span>结算方式</span><select name="payment" required>'+routeOptionList(paymentList,'AUTO','自动轮换结算方式')+'</select></label>'+
-    '<label class="field"><span>角色分配</span><select name="focus">'+option('','均衡轮换')+focusOptions+'</select></label>'+
+    '<label class="field"><span>角色分配</span><select name="focus">'+option('','均衡轮换交易对象')+focusOptions+'</select></label>'+
     '<label class="field"><span>商品轮换范围</span><select name="product_scope">'+scopeOptions+'</select></label>'+
     '<label class="field"><span>起始商品</span><select name="product" required>'+productOptions(defaultScope)+'</select></label>'+
-    '<label class="field"><span>订单数（1–12）</span><input name="count" type="number" min="1" max="12" step="1" value="'+esc(state.accounts.length)+'" required></label>'+
+    '<label class="field"><span>订单数（1–100）</span><input name="count" type="number" min="1" max="'+maxOrders+'" step="1" value="'+esc(state.accounts.length)+'" required></label>'+
     '<label class="field"><span>每笔最多箱数</span><input name="cartons" type="number" min="1" max="100" step="1" value="3" required></label>'+
     '<label class="field"><span>最低现金保留比例（%）</span><input name="floor" type="number" min="0" max="100" step="1" value="70" required></label></div>';
   const port='<details class="server-box"><summary id="port-summary">'+autoPortLabel+'</summary>'+
@@ -176,7 +275,7 @@ function statusChip(t,p,mode){const label=statusLabel(t,p,mode);return chip(labe
 function routeOptionList(list,auto,label){return (auto?option(auto,label):'')+list.map(x=>option(x,x)).join('');}
 function planFields(){
   const form=byId('quote');if(!form)return;
-  const n=Math.max(1,Math.min(12,parseInt(form.count.value,10)||1)), node=byId('plan-lines');
+  const n=Math.max(1,Math.min(maxOrders,parseInt(form.count.value,10)||1)), node=byId('plan-lines');
   const saved=[...node.children].map(row=>[row.querySelector('.line-terms')?.value,row.querySelector('.line-payment')?.value]);
   node.innerHTML=Array.from({length:n},(_,i)=>'<div class="plan-line"><span>第 '+(i+1)+' 笔</span><select class="filter line-terms" aria-label="第 '+(i+1)+' 笔贸易术语">'+termList.map(x=>option(x,x,saved[i]?.[0]||(termList.includes(form.terms.value)?form.terms.value:termList[i%3]))).join('')+'</select><select class="filter line-payment" aria-label="第 '+(i+1)+' 笔结算方式">'+paymentList.map(x=>option(x,x,saved[i]?.[1]||(paymentList.includes(form.payment.value)?form.payment.value:paymentList[i%4]))).join('')+'</select></div>').join('');
 }
@@ -195,8 +294,20 @@ function settingsForm(){
   const school=accounts.length
     ? '<p class="code textwrap">'+esc(state.base)+'</p><div class="taglist space">'+accounts.map(x=>chip(x,'good')).join('')+'</div><div class="form-foot"><span class="hint">退出后可用相同账号续办原合同。</span><button class="btn secondary" data-action="logout" data-lock>退出账号</button></div>'
     : '<p class="hint">连接学校账号后，可以查询角色账本和办理交易。</p><div class="space">'+linkButton('overview','连接账号')+'</div>';
-  const model='<form id="model" autocomplete="off"><div class="fields"><label class="field wide"><span>完整 Chat Completions 地址</span><input name="endpoint" type="url" placeholder="https://…/v1/chat/completions" required autocomplete="off"></label><label class="field"><span>模型名</span><input name="model" required autocomplete="off"></label><label class="field"><span>API Key</span><input name="key" type="password" autocomplete="off"></label></div><div class="form-foot"><span class="hint" id="model-status"></span><div class="btn-row"><button class="btn secondary" type="button" data-action="model-off" data-lock>关闭模型</button><button class="btn primary" data-lock>启用模型</button></div></div></form>';
-  return '<div class="grid split">'+panel('Agent 模型','接入兼容服务后，Agent 可以理解自由提问并选择工作台工具。密钥仅用于本次运行。',model)+panel('学校账号','',school)+'</div>';
+  const model=`<form id="model" autocomplete="off">
+    <div class="fields">
+      <label class="field"><span>模型服务</span><select id="model-provider" data-lock><option value="deepseek">DeepSeek 官方</option><option value="custom">其他兼容服务</option></select></label>
+      <label class="field"><span>模型名</span><input name="model" value="deepseek-flash" list="deepseek-models" required spellcheck="false" data-lock></label>
+      <datalist id="deepseek-models"><option value="deepseek-flash"></option><option value="deepseek-v4-pro"></option></datalist>
+      <label class="field wide" id="model-endpoint-field" hidden><span>服务地址（基础地址或完整接口）</span><input name="endpoint" type="url" value="https://api.deepseek.com" placeholder="https://服务域名/v1" required spellcheck="false" data-lock></label>
+      <label class="field wide"><span>API Key</span><input name="key" type="password" placeholder="粘贴 DeepSeek API Key" required data-lock></label>
+    </div>
+    <div class="form-foot"><span class="hint" id="model-status" role="status"></span><div class="btn-row">
+      <button class="btn secondary" type="button" id="model-off" data-action="model-off" data-lock hidden>关闭模型</button>
+      <button class="btn primary" data-lock>测试并启用</button>
+    </div></div></form>`;
+  const memory='<p id="settings-memory-error" class="hint" role="status"></p>'+forgetButton();
+  return '<div class="grid split">'+panel('Agent 模型','接入兼容服务后，Agent 可以理解自由提问并选择工作台工具。密钥仅用于本次运行。',model)+panel('学校账号','',school+memory)+'</div>';
 }
 
 let onConfirm=null, confirmReturn=null;
@@ -212,9 +323,16 @@ document.addEventListener('submit',async event=>{
   event.preventDefault();if(busy()||!f.checkValidity())return;
   const val=n=>f.elements.namedItem(n).value.trim();
   if(f.id==='login'){
-    const ac=[...f.querySelectorAll('.account-row')].map(r=>({id:r.querySelector('[name=account]').value.trim(),password:r.querySelector('[name=password]').value}));
-    if(ac.some(x=>!x.id)||new Set(ac.map(x=>x.id)).size!==ac.length){feedback('请输入 1–3 个不同的账号。',true);return;}
-    const base=val('base');f.querySelectorAll('input[type=password]').forEach(el=>{el.value=''});await mutate('login',{base,accounts:ac},'正在登录学校平台…');
+    changeSchool(f);
+    if(f.dataset.lookup){feedback('正在读取本校已保存的账号，请稍候再连接。');return;}
+    const base=val('base');
+    const ac=[...f.querySelectorAll('.account-row')].map(row=>{
+      const id=row.querySelector('[name=account]').value.trim(),password=row.querySelector('[name=password]').value;
+      return {id,password,use_saved:!password&&!row.dataset.manualPassword&&row.dataset.savedId===id&&row.dataset.savedBase===base};
+    });
+    if(!ac.length||ac.length>maxAccounts||ac.some(x=>!x.id)||new Set(ac.map(x=>x.id)).size!==ac.length){feedback('请输入 1–10 个不同的账号。',true);return;}
+    const remember=Boolean(f.elements.remember?.checked);
+    await mutate('login',{base,accounts:ac,remember},'正在登录学校平台…');
   }else if(f.id==='quote'){
     const [focus,focus_role='importer']=val('focus').split('|');
     const job={terms:val('terms'),payment:val('payment'),focus,focus_role,product_scope:val('product_scope'),product:val('product'),count:Number(val('count')),cartons:Number(val('cartons')),floor:Number(val('floor')),closing_mail:f.closing_mail.checked};
@@ -222,16 +340,30 @@ document.addEventListener('submit',async event=>{
     if(f.custom.checked){job.plans=[...byId('plan-lines').children].map(row=>({terms:row.querySelector('.line-terms').value,payment:row.querySelector('.line-payment').value}));}
     await mutate('preview',job,'正在读取行情和测算报价…');
   }else{
-    const body={endpoint:val('endpoint'),model:val('model'),key:f.key.value};f.key.value='';
-    if(await mutate('model',body))feedback('模型设置已更新。');
+    const body={endpoint:val('endpoint'),model:val('model'),key:f.key.value};
+    if(await mutate('model',body,'正在向模型发送测试消息…')){
+      f.key.value='';
+      feedback('模型已回复。打开右上角「Agent 助手」即可提问。');
+    }
   }
 });
 document.addEventListener('click',event=>{
   const el=event.target.closest('button');if(!el||el.disabled)return;
   if(el.id==='add-account'){addAccount();byId('account-list').lastElementChild?.querySelector('input')?.focus();return;}
   if(el.classList.contains('remove')){el.closest('.account-row').remove();syncAccounts();return;}
+  if(el.classList.contains('memory-switch')){
+    const row=el.closest('.account-row');
+    row.querySelector('[name=password]').value='';
+    if(row.dataset.manualPassword)delete row.dataset.manualPassword;
+    else row.dataset.manualPassword='1';
+    updatePasswordHint(row);return;
+  }
   const a=el.dataset.action;
-  if(a==='refresh')mutate('refresh',{},'正在读取角色资料与合同条款…');
+  if(a==='forget-accounts'){
+    const form=el.closest('#login');
+    forgetSchool(form,form?form.dataset.school:state.base);
+  }else if(a==='analyze-failure')window.workbenchChat.analyzeFailure();
+  else if(a==='refresh')mutate('refresh',{},'正在读取角色资料与合同条款…');
   else if(a==='start'){
     const p=state.preview;if(!p||previewEdited)return;
     const orders=p.orders||[];ask('确认执行这批交易','<p>工作台将用下面的组合正式签约、采购并办理收付。各角色的学校账户会产生业务记录。</p><ul>'+orders.map(o=>'<li>'+esc(o.contract)+' · '+esc(o.product)+' × '+num(o.quantity)+' · '+esc(o.terms)+' ＋ '+esc(o.payment)+'</li>').join('')+'</ul>','执行 '+orders.length+' 笔交易',()=>mutate('start',{id:p.id},'正在交给本地终端执行…'));
@@ -240,6 +372,19 @@ document.addEventListener('click',event=>{
   else if(a==='model-off')mutate('model',{endpoint:'',model:'',key:''}).then(ok=>{if(ok)feedback('模型服务已关闭。');});
 });
 document.addEventListener('input',event=>{
+  const el=event.target,login=el.closest('#login');
+  if(login){
+    login.dataset.edits=String(Number(login.dataset.edits||0)+1);
+    if(el.name==='base'){changeSchool(login);return;}
+    const row=el.closest('.account-row');
+    if(row?.dataset.savedId){
+      if(el.name==='account'&&el.value.trim()!==row.dataset.savedId){
+        delete row.dataset.savedId;row.querySelector('[name=password]').value='';
+      }else if(el.name==='password')row.dataset.manualPassword='1';
+      updatePasswordHint(row);
+    }
+    return;
+  }
   const f=event.target.closest('#quote');if(!f)return;
   if(event.target.id==='quote-port'){
     const port=event.target.value.trim();
@@ -249,6 +394,19 @@ document.addEventListener('input',event=>{
 });
 document.addEventListener('change',event=>{
   const el=event.target;
+  if(el.name==='base'&&el.form?.id==='login'){lookupSchool(el.form);return;}
+  if(el.id==='model-provider'){
+    const deepseek=el.value==='deepseek', fields=el.form.elements;
+    byId('model-endpoint-field').hidden=deepseek;
+    fields.endpoint.value=deepseek?'https://api.deepseek.com':'';
+    fields.model.value=deepseek?'deepseek-flash':'';
+    if(deepseek)fields.model.setAttribute('list','deepseek-models');
+    else fields.model.removeAttribute('list');
+    fields.key.value='';
+    fields.key.required=deepseek;
+    fields.key.placeholder=deepseek?'粘贴 DeepSeek API Key':'本机免密服务可留空';
+    return;
+  }
   if(el.id==='archive-filter'){archiveFilter=el.value;render();return;}
   const f=el.closest('#quote');
   if(f){

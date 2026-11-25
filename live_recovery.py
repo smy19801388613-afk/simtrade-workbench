@@ -1,7 +1,7 @@
 """Offer the model only bounded student-UI lookups on the interrupted job."""
 from decimal import Decimal
 from dataclasses import replace
-from handoff import Snapshot, recover
+from handoff import ACCOUNT_ALIASES, Snapshot, recover
 from pipeline import read
 
 
@@ -10,7 +10,7 @@ def inspect_exception(platform, directory, ask):
     settlement=directory/("settlement-"+ct+".json")
     unknown_pay=settlement.exists() and read(settlement)["steps"].get("payment",{}).get("status")=="pending"
     role,acct=("importer",case["buyer_account"]) if unknown_pay or stage=="shipped" else ("exporter",case["seller_account"])
-    alias="ABC"[job["accounts"].index(acct)]
+    alias=ACCOUNT_ALIASES[job["accounts"].index(acct)]
     state=Snapshot(alias,role,"JOB-1",case["terms"],case["payment"],"payment_result_unknown" if unknown_pay else "unknown_stage",
                    ("receipt_pending",) if unknown_pay else (),
                    ("read_payment_ledger","read_contract") if unknown_pay else ("read_contract",),1)

@@ -319,9 +319,9 @@ class LivePlatform:
         if u.scheme not in ("http", "https") or not u.hostname or u.username or u.password or u.query or u.fragment:
             raise ValueError("请填写学生平台根地址，例如 https://campus.example/SIMtrade/。")
         self._accounts = {str(k): v for k, v in accounts.items()}
-        if not 1 <= len(accounts) <= 3 or any(not a.strip() or not isinstance(v, str)
+        if not 1 <= len(accounts) <= 10 or any(not a.strip() or not isinstance(v, str)
                                               for a, v in self._accounts.items()):
-            raise ValueError("请提供 1 至 3 个学生账号及对应密码。")
+            raise ValueError("请提供 1 至 10 个学生账号及对应密码。")
         self._sessions = {}
         self._lock = RLock()
 

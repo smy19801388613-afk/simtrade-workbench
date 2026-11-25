@@ -7,14 +7,15 @@ import sys
 from secrets import token_urlsafe
 from threading import RLock, Thread
 
+from account_memory import AccountMemory
 from live_platform import LivePlatform, archive_origins
 from market import PRODUCTS, VERIFIED_PRODUCTS, batch_ports, port_input, product_rotation
-from model_provider import ModelProviderError, _destination, ask_model
+from model_provider import ModelProviderError, ask_model, verify_connection
 from pipeline import read, store_new
-from planning import new_job, rotation
-from trade_modes import PAYMENTS, TERMS, observed_history, pick_route, route_choices, route_status
+from planning import participant_plan
+from trade_modes import PAYMENTS, TERMS, observed_history, partner_history, pick_route, route_choices, route_status
 from agent_session import WorkbenchAgent
-from workbench import LABEL, drive, school_address
+from workbench import LABEL, VERSION, drive, quote_product, school_address
 
 
 def whole_number(value, low, high, label):
@@ -43,6 +44,7 @@ class DesktopSession:
     def __init__(self, data, platform_factory=LivePlatform):
         self.data = Path(data)
         self.default_base = school_address(self.data)
+        self.account_memory = AccountMemory(self.data)
         self.platform_factory = platform_factory
         self.lock = RLock()
         self.token = token_urlsafe(32)
@@ -51,18 +53,54 @@ class DesktopSession:
     def clear(self):
         self.platform = self.ask = self.task = self.preview = None
         self.model_key = ""
+        self.model_name = ""
+        self.model_revision = object()
         self.accounts, self.rows, self.jobs, self.quoted = [], [], [], []
-        self.history, self.snapshots = [], []
+        self.history, self.partner_history, self.snapshots = [], [], []
         self.synced_at = None
         self.preview_params = None
         self.agent = WorkbenchAgent(self)
 
     def state(self):
         with self.lock:
-            return deepcopy(dict(token=self.token, accounts=self.accounts, base=self.platform.base_url if self.platform else self.default_base,
+            base = self.platform.base_url if self.platform else self.default_base
+            remembered = self.remembered(base)
+            return deepcopy(dict(version=VERSION, token=self.token, accounts=self.accounts, base=base,
+                             remembered_accounts=remembered["accounts"], remember_error=remembered["remember_error"],
+                             remember_available=self.account_memory.available,
                              products=[dict(id=k, name=v[0], verified=k in VERIFIED_PRODUCTS) for k,v in PRODUCTS.items()], routes=route_choices(),
                              task=self.task, preview=self.preview, role_rows=self.rows, jobs=self.jobs, synced_at=self.synced_at,
-                             agent=self.agent.view(), model_enabled=self.ask is not None))
+                             agent=self.agent.view(), model_enabled=self.ask is not None, model_name=self.model_name))
+
+    def remembered(self, base):
+        try:
+            ids = self.account_memory.accounts(base) if self.account_memory.available else []
+        except ValueError as exc:
+            return {"accounts": [], "remember_error": str(exc)}
+        return {"accounts": ids, "remember_error": ""}
+
+    def login_credentials(self, records, base):
+        if not isinstance(records, list) or not 1 <= len(records) <= 10:
+            raise ValueError("请输入 1–10 个账号。")
+        credentials, requested = {}, []
+        for row in records:
+            if not isinstance(row, dict):
+                raise ValueError("账号格式有误。")
+            account, password = row.get("id", ""), row.get("password", "")
+            if not isinstance(account, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", account) or account in credentials:
+                raise ValueError("请填写互不重复的有效账号。")
+            use_saved = row.get("use_saved", False)
+            if not isinstance(password, str) or type(use_saved) is not bool or (use_saved and password):
+                raise ValueError("请选用已记住的密码，或重新输入密码。")
+            credentials[account] = password
+            if use_saved:
+                requested.append(account)
+        if requested:
+            saved = self.account_memory.credentials(base, requested)
+            if any(account not in saved for account in requested):
+                raise ValueError("这组账号的本机记录已变更，请刷新页面或重新输入密码。")
+            credentials.update(saved)
+        return credentials
 
     def log(self, line):
         with self.lock:
@@ -110,10 +148,10 @@ class DesktopSession:
                                 terms=case.get("terms",""), payment=case.get("payment",""), accounts=job["accounts"],
                                 updated=job.get("updated",job.get("created","")),kind=job.get("kind","foreign"),
                                 resume_hint=job.get("attention",{}).get("message","")))
-        history = observed_history(all_jobs,self.snapshots)
         with self.lock:
             self.jobs = sorted(visible,key=lambda v:v["updated"],reverse=True)
-            self.history = history
+            self.history = observed_history(all_jobs,self.snapshots)
+            self.partner_history = partner_history(all_jobs,self.snapshots)
 
     def fetch_roles(self, platform, ids, logging=True):
         from diversity import read_current_method
@@ -136,8 +174,43 @@ class DesktopSession:
             self.rows = [{k:s[k] for k in ("account","role","level","currency","cash","loan","stock","todo")} for s in snaps]
             self.synced_at=datetime.now().astimezone().isoformat(timespec="seconds")
 
-    def dispatch(self, path, body):
+    def configure_model(self, body):
+        fields = [body.get(k, "") for k in ("endpoint", "model", "key")]
+        if not all(isinstance(v, str) for v in fields):
+            raise ValueError("模型配置格式有误。")
+        endpoint, name, key = (value.strip() for value in fields)
+        if not endpoint and (name or key):
+            raise ValueError("请填写模型服务基础地址。")
         with self.lock:
+            revision = self.model_revision = object()
+            if not endpoint:
+                self.model_key = self.model_name = ""
+                self.ask = None
+                return
+        try:
+            name = verify_connection(endpoint, name, key)
+        except ModelProviderError as exc:
+            raise ValueError(str(exc)) from None
+        with self.lock:
+            if revision is not self.model_revision:
+                raise ValueError("模型设置已变更，本次测试结果已过期。")
+            self.model_name, self.model_key = name, key
+            self.ask = lambda messages: ask_model(endpoint, name, key, messages, structured=True)
+
+    def dispatch(self, path, body):
+        if path == "model":
+            self.configure_model(body)
+            return
+        with self.lock:
+            if path in ("remembered-accounts", "forget-accounts"):
+                base = body.get("base") or (self.platform.base_url if self.platform else self.default_base)
+                if not isinstance(base, str):
+                    raise ValueError("学校平台地址格式有误。")
+                if path == "forget-accounts":
+                    if self.task and self.task["kind"] == "login" and self.task["status"] == "running":
+                        raise ValueError("正在连接账号，请等本次登录完成后再清除记忆。")
+                    self.account_memory.forget(base)
+                return self.remembered(base)
             if path=="chat":
                 self.agent.message(body)
                 return
@@ -149,18 +222,14 @@ class DesktopSession:
             if path=="login":
                 if self.platform:
                     raise ValueError("请先退出当前账号组合。")
-                records = body.get("accounts")
-                if not isinstance(records,list) or not 1<=len(records)<=3:
-                    raise ValueError("请输入 1–3 个账号。")
-                credentials = {}
-                for row in records:
-                    if not isinstance(row,dict): raise ValueError("账号格式有误。")
-                    account, password = row.get("id",""), row.get("password","")
-                    if not isinstance(account,str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,40}",account) or account in credentials:
-                        raise ValueError("请填写互不重复的有效账号。")
-                    if not isinstance(password,str): raise ValueError("密码格式有误。")
-                    credentials[account] = password
-                platform = self.platform_factory(body.get("base") or self.default_base,credentials)
+                base = body.get("base") or self.default_base
+                if not isinstance(base, str):
+                    raise ValueError("学校平台地址格式有误。")
+                remember = body.get("remember", False)
+                if type(remember) is not bool or (remember and not self.account_memory.available):
+                    raise ValueError("当前环境无法启用 Windows 账号记忆。")
+                credentials = self.login_credentials(body.get("accounts"), base)
+                platform = self.platform_factory(base, credentials)
                 ids = list(credentials)
                 def login():
                     snaps = self.fetch_roles(platform,ids)
@@ -169,19 +238,14 @@ class DesktopSession:
                         self.set_roles(snaps)
                     self.refresh_archives()
                     self.log("已连接，角色与任务已更新。")
+                    if remember:
+                        try:
+                            self.account_memory.save(platform.base_url, credentials)
+                        except ValueError as exc:
+                            self.log(f"账号已连接，但本机记忆未保存。{exc}")
+                        else:
+                            self.log("已在这台电脑记住本次账号。")
                 self.run("login",len(ids)*3,login)
-                return
-            if path=="model":
-                ep, name, key = (body.get(k,"") for k in ("endpoint","model","key"))
-                if not all(isinstance(v,str) for v in (ep,name,key)):raise ValueError("模型配置格式有误。")
-                if ep:
-                    try:
-                        _destination(ep)
-                    except ModelProviderError as exc:
-                        raise ValueError(str(exc)) from None
-                    if not name.strip():raise ValueError("请填写模型名。")
-                self.model_key = key if ep else ""
-                self.ask = (lambda messages:ask_model(ep,name,key,messages)) if ep else None
                 return
             if not self.platform: raise ValueError("请先连接学校账号。")
             if path=="logout":
@@ -217,13 +281,13 @@ class DesktopSession:
                 raise ValueError("未知操作。")
 
     def prepare(self, body):
-        count = whole_number(body.get("count",1),1,12,"订单数")
+        count = whole_number(body.get("count",1),1,100,"订单数")
         preferred_port = port_input(body.get("port",""))
         cartons = whole_number(body.get("cartons",3),1,100,"箱数")
         floor = whole_number(body.get("floor",70),0,100,"保留资金百分比")
-        sku, term = body.get("product"), body.get("terms","CIF")
+        sku, term = body.get("product","AUTO"), body.get("terms","CIF")
         payment = body.get("payment","T/T")
-        if sku not in PRODUCTS or term not in (*TERMS,"ROTATE") or payment not in (*PAYMENTS,"AUTO"):
+        if sku not in (*PRODUCTS,"AUTO") or term not in (*TERMS,"ROTATE") or payment not in (*PAYMENTS,"AUTO"):
             raise ValueError("请选择有效的商品、贸易术语及结算方式。")
         plans=body.get("plans")
         if plans is not None:
@@ -233,31 +297,29 @@ class DesktopSession:
                    or s.get("payment") not in (*PAYMENTS,"AUTO") for s in plans):
                 raise ValueError("请为各笔订单选择有效的搭配。")
         ids = self.accounts
-        order = rotation(ids)
         focus = body.get("focus","")
         focus_role = body.get("focus_role", "importer")
         if focus_role not in ("exporter", "importer"):
             raise ValueError("优先角色须选择出口商或进口商。")
-        if focus:
-            if focus not in ids:raise ValueError("优先账号须在当前账号组合中。")
-            position = 0 if focus_role == "exporter" else 1
-            order.sort(key=lambda actors:actors[position]!=focus)
+        if focus and focus not in ids:raise ValueError("优先账号须在当前账号组合中。")
         send_mail = body.get("closing_mail",False)
         if not isinstance(send_mail,bool):raise ValueError("请确认结案函选项。")
-        products = product_rotation(body.get("product_scope", "all"), sku, count)
+        scope = body.get("product_scope", "verified" if sku=="AUTO" else "all")
+        products = product_rotation(scope, sku, count)
         self.agent.invalidate("start")
         self.quoted, self.preview, self.preview_params = [], None, None
         def quote_batch():
             quotes=[]
-            participants = [order[i%len(order)] for i in range(count)]
+            participants = participant_plan(ids, count, self.partner_history, focus=focus or None,
+                                            focus_role=focus_role, snapshots=self.snapshots)
             ports = batch_ports(self.platform, [actors[1] for actors in participants], preferred_port or None)
             for i,actors in enumerate(participants):
                 product=products[i]
                 t,p=(plans[i]["terms"],plans[i]["payment"]) if plans is not None else (term,payment)
                 pair=pick_route(actors,self.history+quotes,t,p)
-                self.log(f"第 {i+1}/{count} 笔：核对{PRODUCTS[product][0]}行情、运费和三方余额")
                 options = {"port":ports[actors[1]],"terms":pair[0],"payment":pair[1]}
-                job=new_job(self.platform,ids,actors,product,cartons,floor,**options)
+                job=quote_product(self.platform,ids,actors,product,scope,self.partner_history+quotes,cartons,floor,
+                                  lambda message: self.log(f"第 {i+1}/{count} 笔：{message}"),**options)
                 job["closing_mail"]=send_mail
                 if (job["case"]["terms"],job["case"]["payment"])!=pair:raise ValueError("生成的合同方式与所选方式不符。")
                 quotes.append(job)

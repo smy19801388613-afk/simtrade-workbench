@@ -97,11 +97,14 @@ def main():
     print("本地虚构场景：" + ("进口商付款后断线" if args.case == "payment" else "出口装箱单毛重不符"))
     ask = None if args.off else scripted_answer
     if args.api:
-        from model_provider import ask_model
-        endpoint = input("兼容 Chat Completions 的完整地址：").strip()
-        model = input("模型名：").strip()
+        from model_provider import DEEPSEEK_BASE, DEEPSEEK_MODEL, ask_model, _destination
+        endpoint = input(f"模型服务基础地址或完整接口（回车使用 {DEEPSEEK_BASE}）：").strip() or DEEPSEEK_BASE
+        deepseek = _destination(endpoint)[1] == "api.deepseek.com"
+        model = input(f"模型名（回车使用 {DEEPSEEK_MODEL}）：" if deepseek else "模型名：").strip()
+        if deepseek and not model:
+            model = DEEPSEEK_MODEL
         key = getpass("API Key（不回显，本地免密服务可留空）：").strip()
-        ask = lambda messages: ask_model(endpoint, model, key, messages)
+        ask = lambda messages: ask_model(endpoint, model, key, messages, structured=True)
         print("本次仅向所填服务发送 Skill 和匿名示例状态，最多 3 次请求。")
     elif not args.off:
         print("使用预置模型回答检验交接流程。")
