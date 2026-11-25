@@ -1,9 +1,10 @@
 """Quote an ocean trade using the selected terms, payment and each role's cash floor."""
 from datetime import date, timedelta, datetime
 from decimal import Decimal as D
+from itertools import tee
 from secrets import token_hex
 
-from market import alternate_ports, lookup
+from market import alternate_ports, import_inspection_required, lookup
 from pricing import UnprofitableQuote, build, q
 from wording import words_usd, cn_money
 
@@ -35,17 +36,19 @@ def _route_quotes(platform, buyer, first, requested_port):
             yield {**first, **port_fields}
 
 
-def _budget_for_port(quote, cartons, domestic_unit, available, terms, payment):
+def _budget_for_port(quote, quantities, domestic_unit, available, terms, payment):
     product = quote["product"]
     cost = D(product["cost_rmb"])
-    per_carton = int(D(product["per_carton"]))
     reason = "预计无法让三方均获利"
-    for count in range(cartons, 0, -1):
+    for quantity in quantities:
+        if D(q(cost * quantity)) > available["factory"]:
+            reason = "预计最低余额低于角色保留额"
+            continue
         candidates = []
         for multiple in ("2.6", "2.8", "3.0", "3.2", "3.4"):
             price = q(cost * D(multiple) / D(quote["usd_fx"]))
             try:
-                budget = build(product, quantity=count * per_carton, foreign_unit_USD=price,
+                budget = build(product, quantity=quantity, foreign_unit_USD=price,
                                domestic_unit_RMB=domestic_unit, payment=payment, terms=terms,
                                FX_USD=quote["usd_fx"], FX_local=quote["local_fx"],
                                market_unit_local=quote["market"], freight_M=quote["freight_m"],
@@ -80,6 +83,12 @@ def new_job(platform, ids, actors, product_id="17001", cartons=3, floor_percent=
     market_options = {"payment":payment} if payment=="L/C" else {}
     quote=lookup(platform,buyer,factory,product_id,ids,port,**market_options)
     profile={role:platform.profile(acct,role) for acct,role in zip(actors,["exporter","importer","factory"])}
+    inspection = import_inspection_required(quote["product"])
+    if inspection:
+        if not (profile["importer"].get("txtB0312") or "").strip():
+            raise ValueError("该商品须办理入境报检，请先在进口商资料中填写电话。")
+        if not (profile["exporter"].get("txtB0306") or "").strip():
+            raise ValueError("该商品须办理入境报检，请先在出口商资料中填写中文公司全称。")
     snaps={role:platform.snapshot(acct,role) for acct,role in zip(actors,["exporter","importer","factory"])}
     if [snaps[k]["currency"] for k in ("exporter","importer","factory")]!=["RMB",quote["currency"],"RMB"]:
         raise ValueError("当期余额币种与行情不一致。")
@@ -87,14 +96,27 @@ def new_job(platform, ids, actors, product_id="17001", cartons=3, floor_percent=
     floors={k:q(v*D(floor_percent)/100) for k,v in cash.items()}
     p=quote["product"];cost=D(p["cost_rmb"]);dom=q(cost*D("1.6"))
     available={role:balance-D(floors[role]) for role,balance in cash.items()}
-    if available["factory"] < D(q(cost*int(D(p["per_carton"])))):
-        raise ValueError("工厂保留资金后不足以生产一箱商品。请核对工厂余额或本轮保留比例。")
+    per_carton = int(D(p["per_carton"]))
+    minimum_units = 1 if inspection else per_carton
+    if available["factory"] < D(q(cost * minimum_units)):
+        minimum = "一台" if inspection else "一箱"
+        raise ValueError(f"工厂保留资金后不足以生产{minimum}商品。请核对工厂余额或本轮保留比例。")
     if available["exporter"] <= 0 or available["importer"] <= 0:
         raise ValueError("进出口商保留资金后缺少可用于本单的余额。请核对角色资金或保留比例。")
-    for tried, candidate in enumerate(_route_quotes(platform,buyer,quote,port), 1):
-        b, failure = _budget_for_port(candidate,cartons,dom,available,terms,payment)
+    quantity_groups = []
+    if available["factory"] >= D(q(cost * per_carton)):
+        quantity_groups.append(range(cartons * per_carton, 0, -per_carton))
+    if inspection and per_carton > 1:
+        quantity_groups.append(range(per_carton - 1, 0, -1))
+    # Try full cartons across eligible ports before falling back to a partly filled device carton.
+    routes = _route_quotes(platform, buyer, quote, port)
+    for quantities, candidates in zip(quantity_groups, tee(routes, len(quantity_groups))):
+        for tried, candidate in enumerate(candidates, 1):
+            b, failure = _budget_for_port(candidate, quantities, dom, available, terms, payment)
+            if b is not None:
+                quote = candidate
+                break
         if b is not None:
-            quote = candidate
             break
     else:
         scope = f"指定目的港 {port}" if port else f"{quote['country']} 可用的 {tried} 个目的港"

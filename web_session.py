@@ -8,7 +8,7 @@ from secrets import token_urlsafe
 from threading import RLock, Thread
 
 from live_platform import LivePlatform, archive_origins
-from market import PRODUCTS, batch_ports, port_input
+from market import PRODUCTS, VERIFIED_PRODUCTS, batch_ports, port_input, product_rotation
 from model_provider import ModelProviderError, _destination, ask_model
 from pipeline import read, store_new
 from planning import new_job, rotation
@@ -60,7 +60,7 @@ class DesktopSession:
     def state(self):
         with self.lock:
             return deepcopy(dict(token=self.token, accounts=self.accounts, base=self.platform.base_url if self.platform else self.default_base,
-                             products=[dict(id=k, name=v[0]) for k,v in PRODUCTS.items()], routes=route_choices(),
+                             products=[dict(id=k, name=v[0], verified=k in VERIFIED_PRODUCTS) for k,v in PRODUCTS.items()], routes=route_choices(),
                              task=self.task, preview=self.preview, role_rows=self.rows, jobs=self.jobs, synced_at=self.synced_at,
                              agent=self.agent.view(), model_enabled=self.ask is not None))
 
@@ -244,8 +244,7 @@ class DesktopSession:
             order.sort(key=lambda actors:actors[position]!=focus)
         send_mail = body.get("closing_mail",False)
         if not isinstance(send_mail,bool):raise ValueError("请确认结案函选项。")
-        product_ids = list(PRODUCTS)
-        first = product_ids.index(sku)
+        products = product_rotation(body.get("product_scope", "all"), sku, count)
         self.agent.invalidate("start")
         self.quoted, self.preview, self.preview_params = [], None, None
         def quote_batch():
@@ -253,7 +252,7 @@ class DesktopSession:
             participants = [order[i%len(order)] for i in range(count)]
             ports = batch_ports(self.platform, [actors[1] for actors in participants], preferred_port or None)
             for i,actors in enumerate(participants):
-                product=product_ids[(first+i)%len(product_ids)]
+                product=products[i]
                 t,p=(plans[i]["terms"],plans[i]["payment"]) if plans is not None else (term,payment)
                 pair=pick_route(actors,self.history+quotes,t,p)
                 self.log(f"第 {i+1}/{count} 笔：核对{PRODUCTS[product][0]}行情、运费和三方余额")
@@ -267,7 +266,7 @@ class DesktopSession:
                 self.quoted=quotes
                 self.preview=dict(id=token_urlsafe(24),orders=[quote_view(j) for j in quotes])
                 self.preview_params={k:deepcopy(v) for k,v in body.items()
-                                     if k in ("product","terms","payment","count","cartons","floor","focus","focus_role","plans","port")}
+                                     if k in ("product","product_scope","terms","payment","count","cartons","floor","focus","focus_role","plans","port")}
             self.log("报价已生成，等待确认。")
         self.run("preview",count,quote_batch)
 

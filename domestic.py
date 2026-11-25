@@ -9,7 +9,7 @@ import re
 from urllib.parse import urljoin, urlsplit, parse_qs
 
 from live_platform import ROLES, _menu_link, _contract_rows, archive_origins
-from student_document import read_document, save_document
+from student_document import correct_domestic_description, read_document, save_document
 from wording import cn_money
 
 
@@ -20,6 +20,12 @@ class DomesticReview(RuntimeError):
 def require(condition, message):
     if not condition:
         raise DomesticReview(message)
+
+
+def item_description(name, specification):
+    name, specification = name.strip(), specification.strip()
+    require(name, '商品资料缺少中文品名。')
+    return specification if name in specification else (name + ' ' + specification).strip()
 
 
 def amount(value):
@@ -201,12 +207,16 @@ def _lock(path):
 
 
 class _Journal:
-    def __init__(self, path, identity):
+    def __init__(self, path, identity, legacy_description=None):
         self.path = path
         self.data = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {
             'identity':identity,'signed':date.today().isoformat(),'steps':{}}
-        require(any(self.data['identity'] == dict(identity, platform=base)
-                    for base in archive_origins(identity['platform'])), '同号订单与已保存的角色或交易条件不同。')
+        orders = [identity['order']]
+        if legacy_description:
+            orders.append(dict(identity['order'], description_cn=legacy_description))
+        require(any(self.data['identity'] == dict(identity, platform=base, order=order)
+                    for base in archive_origins(identity['platform']) for order in orders),
+                '同号订单与已保存的角色或交易条件不同。')
 
     def save(self):
         temp = self.path.with_suffix('.tmp')
@@ -248,6 +258,11 @@ def run_domestic(buyer, factory, order, state_dir):
             'expected_unit_cost_rmb','expected_profit_rmb','signing_city')
     require(all(k in order and str(order[k]).strip() for k in keys), '国内订单缺少合同、货物、价格或预算字段。')
     optional = ('delivery_date','available_factory_stock','buyer_cash_floor_rmb','factory_cash_floor_rmb')
+    legacy_description = order.get('legacy_description_cn')
+    if legacy_description:
+        require(item_description(order['product_name_cn'], legacy_description) == order['description_cn'],
+                '旧版品名规格与当前商品档案不符。')
+        legacy_description = legacy_description.strip()
     order = {k:str(order[k]).strip() for k in (*keys,*optional) if k in order}
     ct = order['contract']
     require(re.fullmatch(r'[A-Z0-9]{1,40}',ct) and re.fullmatch(r'\d{5}',order['product_id']),
@@ -260,8 +275,29 @@ def run_domestic(buyer, factory, order, state_dir):
     root.mkdir(parents=True, exist_ok=True)
     with _lock(root/('domestic-' + ct + '.lock')), buyer.lock, factory.lock:
         journal = _Journal(root/('domestic-' + ct + '.json'),
-                           dict(platform=buyer.base_url,buyer=buyer.account,factory=factory.account,order=order))
+                           dict(platform=buyer.base_url,buyer=buyer.account,factory=factory.account,order=order),
+                           legacy_description)
         return _run(buyer,factory,order,journal,n,price,cost,profit)
+
+
+def _resume_description(journal, buyer, factory, values, item, bstatus, edit):
+    """Migrate only a matching unsigned draft; retain the terms of an order already sent."""
+    saved = journal.data['identity']['order']
+    old, new = saved['description_cn'], item['M1304']
+    if old == new:
+        return item
+    steps = journal.data['steps']
+    if 'send' in steps:
+        return dict(item, M1304=old)
+    if 'draft' in steps:
+        require(bstatus() == '起草合同', '原采购合同已离开起草阶段，请核对平台状态后续办。')
+        ct = saved['contract']
+        def matches(doc, description):
+            return _matches(doc, ct, buyer, factory, values, dict(item, M1304=description))
+        correct_domestic_description(buyer, edit(buyer), ct, item['M1303'], old, new, matches)
+    saved['description_cn'] = new
+    journal.save()
+    return item
 
 
 def _run(buyer,factory,order,journal,n,price,cost,profit):
@@ -317,6 +353,7 @@ def _run(buyer,factory,order,journal,n,price,cost,profit):
                 '工厂收到的合同与本单货物、金额或买方资料不符。')
         return save_document(factory,url,signature,submit=submit)
     journal.step('create',create,lambda:bstatus() == '起草合同')
+    item = _resume_description(journal,buyer,factory,values,item,bstatus,edit)
     journal.step('draft',save_buyer,lambda:_matches(read_document(buyer,edit(buyer)),ct,buyer,factory,values,item))
     journal.step('send',lambda s:checked(buyer,'E3','E302','E304',s),lambda:fstatus() == '等待确认')
     journal.step('signature',sign_factory,signed_doc)

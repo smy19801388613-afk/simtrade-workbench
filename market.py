@@ -11,9 +11,38 @@ from live_platform import PlatformError, _menu_link
 # These are market-list page hints, not prices. If the catalogue order changes, search the remaining pages.
 PRODUCTS = {"17001": ("床单", 33), "03001": ("壁钟", 5), "13001": ("直杆伞", 25),
             "15002": ("手提包", 29), "19001": ("男士皮鞋", 37),
-            "22003": ("组合螺丝刀", 42), "30001": ("网球", 47), "08001": ("儿童踏板车", 15)}
+            "22003": ("组合螺丝刀", 42), "30001": ("网球", 47), "08001": ("儿童踏板车", 15),
+            "21003": ("双门冰箱", 41), "25002": ("便携式脑电图仪", 42)}
+VERIFIED_PRODUCTS = ("17001", "03001", "13001", "15002", "19001", "21003", "25002")
+IMPORT_INSPECTIONS = {"21003": ("8418212000", "A"), "25002": ("9018199000", "6A")}
 PREFERRED_PORTS = {"印度尼西亚":"JAKARTA", "英国":"LONDON", "澳大利亚":"MELBOURNE",
                    "法国":"MARSEILLES", "美国":"LOS ANGELES"}
+
+
+def product_pool(scope):
+    if scope == "verified":
+        return VERIFIED_PRODUCTS
+    if scope == "all":
+        return tuple(PRODUCTS)
+    raise ValueError("请选择有效的商品轮换范围。")
+
+
+def product_rotation(scope, first, count):
+    products = product_pool(scope)
+    if first not in products:
+        raise ValueError("起始商品须属于本次选择的商品组。")
+    start = products.index(first)
+    return [products[(start + index) % len(products)] for index in range(count)]
+
+
+def import_inspection_required(product):
+    code = product.get("regulatory_code", "").strip()
+    expected = IMPORT_INSPECTIONS.get(product.get("id"))
+    if expected and (product.get("hs"), code) == expected:
+        return True
+    if not expected and code in ("", "-", "无"):
+        return False
+    raise ValueError("该商品的海关编码或监管条件超出工作台支持的履约范围，请核对学校商品目录和税则。")
 
 
 @lru_cache(maxsize=1)
@@ -235,7 +264,8 @@ def catalogue_item(s, product, *, require_export_route=True):
     if len(rows)!=1:raise ValueError("税则需按实际附加码重新核对。")
     item["tax"]=dict(zip(("hs","extra","description","normal_duty_pct","duty_pct","export_tax_pct","VAT_pct","consumption_per_unit","consumption_pct","refund_pct","statistical_unit","regulatory_code"),rows[0]))
     item["regulatory_code"]=item["tax"]["regulatory_code"]
-    if require_export_route and item["regulatory_code"]: raise ValueError("当前自动履约线路只支持无额外监管条件的商品。")
+    if require_export_route:
+        import_inspection_required(item)
     return item,home
 
 

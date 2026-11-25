@@ -7,7 +7,7 @@ import sys
 from secrets import token_hex
 
 from live_platform import DEFAULT_SCHOOL_URL, LivePlatform, ROLES, archive_origins
-from market import PRODUCTS, PortSelectionError
+from market import PRODUCTS, PortSelectionError, product_pool, product_rotation
 from pipeline import read, write, store_new, advance, run_lock
 from planning import rotation, new_job
 from results import summarize
@@ -136,8 +136,9 @@ def new_round(platform,ids,data,ask):
         snaps=[read_current_method(platform,platform.snapshot(a,r),data)
                for a in ids for r in ("exporter","importer")]
         history=observed_history(history,snaps)
-    first=choose([(f"{x}  {v[0]}",x) for x,v in PRODUCTS.items()],"第一笔商品")
-    product_ids=list(PRODUCTS); offset=product_ids.index(first)
+    scope=choose([("已结案商品","verified"),("全部商品","all")],"商品轮换范围")
+    first=choose([(f"{sku}  {PRODUCTS[sku][0]}",sku) for sku in product_pool(scope)],"第一笔商品")
+    products=product_rotation(scope,first,n)
     carton=integer("每笔最多箱数",3,1,100)
     floor=integer("每个角色至少保留当前现金的百分之几",70,0,100)
     quotes=[]
@@ -147,7 +148,7 @@ def new_round(platform,ids,data,ask):
             pair=choose([(f"{t} ＋ {p}",(t,p)) for t,p in AUTOMATIC_PAIRS],f"第 {i+1} 笔的条款")
         else:pair=route or pick_route(roles,history+quotes)
         options={"terms":pair[0],"payment":pair[1]}
-        product=product_ids[(offset+i)%len(product_ids)]
+        product=products[i]
         print("正在读取当期货价、关税、目的港和角色余额……",flush=True)
         try:j=new_job(platform,ids,roles,product,carton,floor,**options)
         except PortSelectionError as exc:

@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import tempfile
 
+from domestic import item_description
 from live_platform import archive_origins
 
 
@@ -71,7 +72,8 @@ def check_cash(platform, case, roles):
 
 def domestic_order(case):
     p=case["product"];d=case["domestic"]
-    return dict(contract=d["contract"],product_id=p["id"],description_cn=p["spec_cn"],
+    return dict(contract=d["contract"],product_id=p["id"],description_cn=item_description(p["name_cn"], p["spec_cn"]),
+                legacy_description_cn=p["spec_cn"],
                 product_name_cn=p["name_cn"],unit=p["unit"],quantity=p["quantity"],cartons=p["cartons"],
                 unit_price_rmb=d["unit_price_rmb"],expected_unit_cost_rmb=d["production_unit_cost_rmb"],
                 expected_profit_rmb=case["economics"]["factory_profit_RMB"],signing_city=d["signing_city"],

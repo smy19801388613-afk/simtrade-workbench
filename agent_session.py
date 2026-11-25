@@ -7,13 +7,13 @@ from threading import Thread
 
 from agent_brain import EDUCATE, NEGATE, RESUME, plain, plan, review_result
 from agent_terminal import run_terminal
-from market import PRODUCTS
+from market import PRODUCTS, VERIFIED_PRODUCTS
 from trade_modes import route_choices
 
 
 ROLE = {"exporter":"出口商","importer":"进口商","factory":"工厂"}
 STAGE = {"quoted":"待执行报价","contracted":"已签约","supplied":"已供货","shipped":"已装运交单","completed":"已结案"}
-PUBLIC = ("product","terms","payment","count","cartons","floor","focus","focus_role","plans","port")
+PUBLIC = ("product","product_scope","terms","payment","count","cartons","floor","focus","focus_role","plans","port")
 
 
 def quote_lines(orders):
@@ -96,7 +96,7 @@ class WorkbenchAgent:
             value=re.sub(r"(?i)https?://[^\s，。；）)]+|[\w.+%-]+@[\w.-]+\.[A-Za-z]{2,}", "[地址已隐藏]",value)
             return re.sub(r"(?i)(?<![a-z])[a-z]:[\\/][^\n，。；]+","[本机路径]",value)
         task=s.task
-        ctx=dict(accounts=list(accounts.values()),products=[dict(id=k,name=v[0]) for k,v in PRODUCTS.items()],
+        ctx=dict(accounts=list(accounts.values()),products=[dict(id=k,name=v[0],verified=k in VERIFIED_PRODUCTS) for k,v in PRODUCTS.items()],
                  routes=[{"terms":r["terms"],"payment":r["payment"]} for r in route_choices()],
                  roles=anon(s.rows),jobs=anon([{k:j.get(k,"") for k in ("contract","stage","product","terms","payment","resume_hint")}
                                               for j in s.jobs[:100]]), synced_at=s.synced_at,
@@ -222,6 +222,7 @@ class WorkbenchAgent:
                     if params["focus"] not in reverse:raise ValueError("请选择已连接的账号作为优先角色。")
                     params["focus"]=reverse[params["focus"]]
                 params.setdefault("product",next(iter(PRODUCTS)))
+                params.setdefault("product_scope","verified" if params["product"] in VERIFIED_PRODUCTS else "all")
                 params["closing_mail"]=False
             s.dispatch(tool,params)
             self.watching[s.task["id"]]=(tool,request)

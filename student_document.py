@@ -3,7 +3,7 @@ from copy import deepcopy
 from html.parser import HTMLParser
 import re
 from pathlib import PurePosixPath
-from urllib.parse import urljoin, urlsplit, parse_qs, quote, unquote
+from urllib.parse import urljoin, urlsplit, parse_qs, quote, unquote, urlencode
 import xml.etree.ElementTree as ET
 
 
@@ -153,6 +153,37 @@ def save_document(session, url, values, *, items=None, child_url=None, submit=No
     _update(main, values, allowed)
     if items:
         _child_items(session, page, root, items, child_url)
+    return _save_form(session, page, root, submit)
+
+
+def correct_domestic_description(session, url, ct, sku, previous, description, matches):
+    """Edit the one displayed M13 row in place on an exporter's unsigned M12."""
+    page, _, root = _load(session, url)
+    rows = root.findall('M13')
+    if (session.role != 'exporter' or root[0].tag != 'M12' or page.fields.get('flag') != '1'
+            or page.fields.get('flag2') != ct or len(rows) != 1 or rows[0].findtext('M1301') != ct
+            or rows[0].findtext('M1303') != sku):
+        raise DocumentReview('国内采购合同或商品行与待修改的草稿不符。')
+    if matches(root, description):
+        return
+    if not matches(root, previous):
+        raise DocumentReview('原草稿与存档的商品、金额或签约资料不同，请核对该合同。')
+    if ('DetailOperate(1,' not in page.html or 'CM13.aspx?a1=' not in page.html
+            or '"&a3="' not in page.html):
+        raise DocumentReview('当前草稿没有修改已有商品行的入口。')
+    params = urlencode({'a1':ct, 'a2':sku, 'a3':1})
+    child = session.get(urljoin(page.url, 'CM13.aspx?' + params))
+    if (child.fields.get('M1301') != ct or child.fields.get('flag2') != '1'
+            or child.fields.get('flag') in (None, '', '0')):
+        raise DocumentReview('商品修改窗口未选中原合同的货物行。')
+    _update(rows[0], {'M1304': description}, _editable(_Form(child), '#theXMLisland'))
+    _save_form(session, page, root)
+    if not matches(read_document(session, url), description):
+        raise DocumentReview('修改后未能从平台回读正确的品名规格，请续办原合同核对。')
+
+
+def _save_form(session, page, root, submit=None):
+    tag = root[0].tag
     save = re.search(r'doClientSubmit\(\s*"POST"\s*,\s*"(PostForm\.aspx\?tb=(\w+)&uid=)"', page.html, re.I)
     if not save or save[2] != tag or not page.fields.get('flag4'):
         raise DocumentReview('当前文书没有匹配的前台保存按钮。')

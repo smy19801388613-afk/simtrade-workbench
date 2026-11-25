@@ -1,5 +1,5 @@
 """Import customs declaration prepared from the signed contract and issued delivery order."""
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import re
 from urllib.parse import urlencode
@@ -66,6 +66,49 @@ def _arrival(case, operation):
 
 def _draft(values, child_url=None, items=None):
     return {'values': values, 'child_url': child_url, 'items': items or []}
+
+
+def inspection(case):
+    """Prepare the importer's M17B from issued transport documents and contract facts."""
+    from market import import_inspection_required
+    seller, buyer, product, ship = (case[k] for k in ('seller', 'buyer', 'product', 'ship'))
+    if not import_inspection_required(product):
+        raise ValueError('本商品无须入境报检。')
+    form_id = _doc(case, 'M17B')
+    bill = _doc(case, 'M01')
+    _doc(case, 'M19')
+    _doc(case, 'M21')
+    application = _operation_date(case, 'inspection_date')
+    arrival = _arrival(case, application)
+    warehouse = _date(ship.get('warehouse_entry'), 'ship.warehouse_entry from M41')
+    days = case.get('claim_days_after_actual_arrival')
+    if not arrival <= warehouse <= application or type(days) is not int or days <= 0:
+        raise ValueError('请核对提货单的入库日期与合同约定的索赔期限。')
+    values = {
+        'M1707': _text(buyer, 'company_en'), 'M1708': _text(buyer, 'credit_code'),
+        'M1709': buyer.get('person_en_raw') or _text(buyer, 'person_en'), 'M1710': _text(buyer, 'phone'),
+        'M1711': str(application.year), 'M1712': str(application.month), 'M1713': str(application.day),
+        'M1714': buyer.get('company_cn') or '/', 'M1715': _text(buyer, 'company_en'),
+        'M1716': _text(seller, 'company_cn'), 'M1717': _text(seller, 'company_en'),
+        'M1718': ship['vessel'] + '/' + ship['voyage'], 'M1721': case['contract'], 'M1719': '一般贸易',
+        'M1725': '中国', 'M1789': bill, 'M1727': '中国', 'M1726': '/',
+        'M1791': case['loading_port_cn'], 'M1792': case['destination_cn'], 'M1728': case['destination_cn'],
+        'M1724': arrival.isoformat(), 'M1790': warehouse.isoformat(),
+        'M1793': (arrival + timedelta(days=days)).isoformat(), 'M1731': '/', 'M1795': '/', 'M1796': '/',
+        'M1732': _text(case, 'mark'), 'M1783': _text(buyer, 'person_en'),
+        'M1733': '1', 'M1734': '1', 'M1735': '1', 'M1743': '1',
+    }
+    if ship.get('container'):
+        values['M1730'] = _text(ship, 'container')
+    if ship.get('actual_intermediate_port_cn'):
+        values['M1794'] = _text(ship, 'actual_intermediate_port_cn')
+    item = {
+        'M1803': _text(product, 'id'), 'M1804': _text(product, 'name_cn') + '\n' + _text(product, 'name_en'),
+        'M1805': _text(product, 'hs'), 'M1806': '中国', 'M1807': _plain(product['quantity'], 'quantity'),
+        'M1808': _text(product, 'unit'), 'M1809': case['currency'], 'M1810': _money(case['amount_usd'], 'contract amount'),
+        'M1811': _plain(product['cartons'], 'cartons'), 'M1812': _text(product, 'packing_unit'),
+    }
+    return _draft(values, 'CM18.aspx?' + urlencode({'a1': form_id, 'a2': ''}), [item])
 
 
 def customs(case):

@@ -9,7 +9,8 @@ import re
 from tempfile import NamedTemporaryFile
 from urllib.parse import urlencode
 
-from import_declaration import customs
+from import_declaration import customs, inspection
+from market import import_inspection_required
 from student_document import read_document, save_document
 
 
@@ -247,6 +248,44 @@ def _declare_safe(journal, session, case, direction):
     journal.run(step, lambda: _message(session.post(form, "Button1", fields), expected))
 
 
+def _inspect_import(buyer, case, budget, journal):
+    from foreign_trade import _list_page, _notes, add_note, note, prepare_doc_submission
+    ct = case["contract"]
+
+    def existing_id():
+        row = _notes(_list_page(buyer, ct, "I2")).get("M17B")
+        return row[2] if row else None
+
+    case["documents"]["M17B"] = journal.run("create_inspection", lambda: add_note(buyer, ct, "M17B"), existing_id)
+    if not journal.done("save_inspection"):
+        # Keep the form's application date stable when resuming a previous submission.
+        case["inspection_date"] = journal.data["facts"].setdefault("inspection_date", date.today().isoformat())
+        journal.save()
+        draft = inspection(case)
+        def checked():
+            return _message(note(buyer, ct, "I2", "M17B", check=True), "100%")
+        def save():
+            save_document(buyer, note(buyer, ct, "I2", "M17B"), **draft)
+            return checked()
+        def recover_draft():
+            report = note(buyer, ct, "I2", "M17B", check=True)
+            if "100%" in report.text:
+                return "100%"
+            return save()
+        journal.run("save_inspection", save, recover_draft)
+    if not journal.done("import_inspection"):
+        currency = case["buyer"]["currency"]
+        fee = budget["importer"]["M5010"]
+        def receipt():
+            return _entry(_ledger(buyer, ct), "检验费", "expense", (currency, fee))
+        submit = None
+        if "import_inspection" not in journal.data["steps"]:
+            _guard(buyer, case, currency, fee)
+            post = prepare_doc_submission(buyer, ct, "I4", ["M07", "M19", "M21", "M41", "M17B"])
+            submit = lambda: _message(post(), "成功办理检验")
+        journal.run("import_inspection", submit, receipt)
+
+
 def _complete(platform, case, budget, journal):
     from foreign_trade import add_note, note, open_action, send_docs
     ct = case["contract"]
@@ -311,6 +350,8 @@ def _complete(platform, case, budget, journal):
         arrival = journal.data["facts"]["arrival"]
         case["documents"]["M41"] = arrival["id"]
         case["ship"].update({k: v for k, v in arrival.items() if k != "id"})
+        if import_inspection_required(product):
+            _inspect_import(buyer, case, budget, journal)
         form_id = journal.run("create_declaration", lambda: add_note(buyer, ct, "M05B"))
         case["documents"]["M05B"] = form_id
         if not journal.done("save_declaration"):
@@ -419,8 +460,7 @@ def settle_trade(platform, case, budget, state_dir):
     try:
         if case.get("terms") not in ("CIF","CFR","FOB") or case.get("payment") not in ("T/T","D/A","D/P","L/C"):
             raise SettlementReview("收尾流程未识别合同约定的贸易术语或结算方式。")
-        if any(x in case["product"]["regulatory_code"] for x in ("A", "B")):
-            raise SettlementReview("此商品需增加检验手续。")
+        import_inspection_required(case["product"])
         if case.get("status") not in ("shipped_documents_sent","shipped_for_bank","completed"):
             raise SettlementReview("出口交单尚未确认。")
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 from secrets import token_hex
 
-from domestic import run_domestic, amount
+from domestic import run_domestic, amount, item_description
 from live_platform import archive_origins
 from market import catalogue_item, market_price, PRODUCTS
 from pricing import factory_costs, q
@@ -86,8 +86,8 @@ def plan_supply(platform,buyer_id,factory_id,product_id,cartons,floor_percent):
         raise ValueError('一箱采购也无法同时覆盖生产成本、税费和双方资金保留额。')
     signed = date.today()
     contract = 'WD'+signed.strftime('%y%m%d')+token_hex(3).upper()
-    description = item['name_cn'] + ' ' + item['spec_cn']
-    order = dict(contract=contract,product_id=product_id,description_cn=description.strip(),
+    description = item_description(item['name_cn'], item['spec_cn'])
+    order = dict(contract=contract,product_id=product_id,description_cn=description,
                  unit=item['unit'],quantity=int(n),cartons=boxes,unit_price_rmb=q(price),
                  expected_unit_cost_rmb=str(cost),expected_profit_rmb=budget['factory_profit_rmb'],
                  signing_city='供方所在地',delivery_date=(signed+timedelta(days=10)).isoformat(),
@@ -115,10 +115,12 @@ def execute_supply(platform,plan,state_dir):
     submitted = path.exists() and json.loads(path.read_text(encoding='utf-8')).get('steps')
     if not submitted:
         item,per,cost,vat = _quote(platform,roles,order['product_id'])
+        descriptions = {item_description(item['name_cn'], item['spec_cn']),
+                        (item['name_cn'] + ' ' + item['spec_cn']).strip()}
         if (item['unit'] != order['unit'] or int(order['cartons'])*per != order['quantity'] or
                 amount(order['expected_unit_cost_rmb']) != cost or
                 amount(plan['product']['tax']['VAT_pct']) != vat*100 or
-                order['description_cn'] != (item['name_cn']+' '+item['spec_cn']).strip()):
+                order['description_cn'] not in descriptions):
             raise ValueError('商品规格、生产成本或税率发生变化，请重新报价。')
         floors = {k:q(amount(s['cash'])*amount(plan['floor_percent'])/100) for k,s in plan['opening'].items()}
         if (floors != plan['budget']['cash_floor_rmb'] or order['buyer_cash_floor_rmb'] != floors['exporter']

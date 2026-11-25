@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import unicodedata
 
-from market import PRODUCTS, port_catalogue, port_input
+from market import PRODUCTS, VERIFIED_PRODUCTS, port_catalogue, port_input
 from trade_modes import PAYMENTS, TERMS
 
 
@@ -18,7 +18,7 @@ PARAMS = {"answer": set(), "status": {"account","role","view"}, "refresh": set()
           "jobs": {"stage"}, "terminal_check": set(), "terminal_audit": {"contract"},
           "start": set(), "resume": {"contract"},
           "preview": {"count","cartons","floor","focus","focus_role","port","plans",
-                      "product","terms","payment"}}
+                      "product","product_scope","terms","payment"}}
 TOOLS = {
     "answer": "解释、回答开放问题，或询问缺失信息。只用已知事实。",
     "status": "读取工作台余额、各角色等级、待办或当前执行进度。",
@@ -46,6 +46,12 @@ def plain(s):
 def products(ctx):
     return {str(row["id"]):str(row["name"]) for row in ctx.get("products",[]) if "id" in row and "name" in row} or {
         k:v[0] for k,v in PRODUCTS.items()}
+
+
+def _mentioned_products(text, ctx):
+    aliases = {"21003": "冰箱", "25002": "脑电图"}
+    return [pid for pid, name in products(ctx).items() if name in text or
+            (pid in aliases and aliases[pid] in text) or re.search(r"(?<!\d)"+re.escape(pid)+r"(?!\d)", text)]
 
 
 def _integer(s):
@@ -80,10 +86,13 @@ def _constraints(text, ctx):
         txt=txt[:m.start()] + letters[0]+"/"+letters[1] + txt[m.end():]
     term=re.findall(TERM_PATTERN,txt)
     payment=re.findall(PAY_PATTERN,txt)
-    pids=products(ctx)
-    goods=[pid for pid,name in pids.items() if name in txt or re.search(r"(?<!\d)"+re.escape(pid)+r"(?!\d)",txt)]
+    goods=_mentioned_products(txt,ctx)
     if len(goods)>1:raise ValueError("一批报价需选一个起始商品，之后按目录轮换。你想从哪种商品开始？")
     out={}
+    if re.search(r"已(?:经)?(?:验证|结案)|有结案记录|历史结案",txt):
+        out["product_scope"]="verified"
+    elif re.search(r"(?:全部|所有|完整)(?:的)?(?:商品|品类|目录)",txt):
+        out["product_scope"]="all"
     if goods:out["product"]=goods[0]
     if term:out["terms"]=term[0]
     if payment:out["payment"]=payment[0]
@@ -205,6 +214,13 @@ def _quote(txt,history,ctx):
                 base["plans"]=[dict(p,**{k:changes[k] for k in ("terms","payment") if k in changes}) for p in base["plans"]]
     out=dict(terms="CIF",payment="T/T",count=1,cartons=3,floor=70)
     out.update(base);out.update(changes)
+    if out.get("product_scope") == "verified" and out.get("product") not in VERIFIED_PRODUCTS:
+        if "product" in changes:
+            if "product_scope" in changes:raise ValueError("这个起始商品不在有结案记录的商品组内。")
+            out["product_scope"]="all"
+        else:
+            out["product"]=VERIFIED_PRODUCTS[0]
+    if out.get("product_scope")=="all":out.setdefault("product",next(iter(PRODUCTS)))
     if "product" not in out:return result("answer","先用哪种商品试算？例如回复「床单」即可，箱数上限和资金保留比例也可以一起指定。")
     return result("preview","用当前行情试算三方报价。",**out)
 
@@ -240,7 +256,7 @@ def _help(txt,ctx):
 
 def _wants_fresh_quote(txt,ctx):
     """A request to change goods or terms must not execute an older preview."""
-    has_spec = any(n in txt or pid in txt for pid,n in products(ctx).items())
+    has_spec = bool(_mentioned_products(txt,ctx))
     has_spec |= bool(re.search(TERM_PATTERN+"|"+PAY_PATTERN,txt) or any(x in txt for x in PAY_WORDS))
     has_spec |= bool(re.search(r"改为|改成|换成|重新报价|(?:先|重新)(?:试算|报价)|\d+\s*(?:箱|笔)",txt))
     return has_spec and bool(re.search(QUOTE+"|"+MODIFY,txt))
@@ -275,7 +291,7 @@ def _local(text,history,ctx,model_failed=False):
         return result("refresh","从学校同步当前角色资料。")
     mentioned=re.search(QUOTE+"|"+MODIFY,txt)
     last_agent=next((m.get("content","") for m in reversed(history) if m.get("role")=="assistant"),"")
-    if mentioned or ("哪种商品" in last_agent and any(n in txt or k in txt for k,n in products(ctx).items())):
+    if mentioned or ("哪种商品" in last_agent and _mentioned_products(txt,ctx)):
         return _quote(txt,history,ctx)
     if re.search(r"存档|合同列表|有哪些合同|未结(?:案|合同)|哪些合同|最近的?(?:交易|合同)|有哪些订单",txt):
         stage=next((v for k,v in STAGES.items() if k in txt),None)
@@ -311,7 +327,8 @@ def _instructions():
             "。status 角色 exporter/importer/factory，view 为余额 balances、待办 todo、当前任务 task 或 all。"
             "jobs 的 stage 是 open/quoted/contracted/supplied/shipped/completed。terminal_audit 和 resume 指定已知 J 代号。"
             "preview 的 count 是1–12笔，cartons 是每笔上限1–100箱，floor 是现金保留百分数0–100。"
-            "商品必须用提供的 id；箱数与销售件数分开。无明确商品时先询问。terms 可选 FOB/CFR/CIF/ROTATE；"
+            "商品用提供的 id。product_scope 取 verified（默认，轮换有结案记录的商品）或 all（完整目录）。"
+            "用户指定商品组即可用组内首个商品开头；单独点名组外商品使用 all。箱数与销售件数分开。terms 可选 FOB/CFR/CIF/ROTATE；"
             "payment 可选 T/T,D/P,D/A,L/C,AUTO；逐笔选用 plans=[{terms,payment},…]，条数等于 count；"
             "focus 为 A/B/C，focus_role 为 importer/exporter。port 留空将按每笔进口商国家选港；指定港名只适用于本批匹配该国的进口商。可沿用最近报价参数。"
             "只使用匿名账号、合同。提供的工具是此应用可实际执行的能力，终端可运行自检/核账。"
@@ -336,6 +353,10 @@ def _decision(raw,ctx):
     if tool in ("terminal_audit","resume"):
         if args.get("contract") not in {j["contract"] for j in ctx.get("jobs",[])}:raise ValueError("未知合同。")
     if tool=="preview":
+        scope=args.get("product_scope")
+        if "product_scope" in args and scope not in ("verified","all"):raise ValueError("商品范围有误。")
+        if scope=="verified" and args.get("product") not in (None,*VERIFIED_PRODUCTS):raise ValueError("起始商品不在所选范围内。")
+        if scope:args.setdefault("product",VERIFIED_PRODUCTS[0] if scope=="verified" else next(iter(PRODUCTS)))
         if args.get("product") not in products(ctx):raise ValueError("商品编号有误。")
         if args.get("terms","CIF") not in (*TERMS,"ROTATE") or args.get("payment","T/T") not in (*PAYMENTS,"AUTO"):raise ValueError("合同条款有误。")
         if args.get("focus_role","importer") not in ("importer","exporter"):raise ValueError("优先角色有误。")

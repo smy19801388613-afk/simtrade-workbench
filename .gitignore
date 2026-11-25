@@ -9,6 +9,10 @@
 !/tests/
 /tests/*
 !/tests/test_ports.py
+!/tests/test_domestic_description.py
+!/tests/test_device_quote.py
+!/tests/test_import_inspection.py
+!/tests/test_products.py
 !/ui/
 !/docs/
 /docs/*

@@ -8,6 +8,7 @@ import re
 from urllib.parse import quote, urljoin, urlsplit, parse_qs
 
 from live_platform import PlatformError, ROLES, _menu_link
+from market import import_inspection_required
 from student_document import read_document, save_document
 import foreign_documents as docs
 
@@ -175,7 +176,7 @@ def add_note(session, ct, typ):
     return existing[2]
 
 
-def send_docs(session, ct, op, types):
+def prepare_doc_submission(session, ct, op, types):
     page = _list_page(session, ct, op)
     rows = _notes(page)
     if not types or len(types) != len(set(types)) or set(types) - rows.keys():
@@ -183,7 +184,12 @@ def send_docs(session, ct, op, types):
     marks = [rows[t][0] for t in types]
     if set(marks) - set(_marks(page, 'checkbox')):
         raise TradeReview('平台没有提供全部待提交单据的勾选项。')
-    return _success(session.post(page, '_ctl0:btnOk', {'flag': ';'.join(marks) + ';', 'mark': marks}))
+    fields = {'flag': ';'.join(marks) + ';', 'mark': marks}
+    return lambda: _success(session.post(page, '_ctl0:btnOk', fields))
+
+
+def send_docs(session, ct, op, types):
+    return prepare_doc_submission(session, ct, op, types)()
 
 
 class _Record:
@@ -261,10 +267,10 @@ def _match_contract(root, draft, case):
 
 
 def _validate(case):
+    import_inspection_required(case['product'])
     if (case['terms'] not in ('FOB', 'CFR', 'CIF') or case['payment'] not in ('T/T','L/C','D/P','D/A')
             or case['currency'] != 'USD'
-            or case['loading_port'] != 'SHANGHAI' or case['product']['packing_unit'] != 'CARTON'
-            or case['product'].get('regulatory_code', '').strip() not in ('', '-', '无')):
+            or case['loading_port'] != 'SHANGHAI' or case['product']['packing_unit'] != 'CARTON'):
         raise TradeReview('请核对合同的贸易术语、结算方式、美元计价、上海起运、纸箱包装和商品监管条件。')
     qty = Decimal(str(case['product']['quantity']))
     price = Decimal(str(case['price_usd']))

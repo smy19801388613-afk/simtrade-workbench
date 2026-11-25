@@ -134,15 +134,22 @@ async function fillPortChoices(list){
     portCatalogueRequest=null;
   }
 }
+function productOptions(scope,selected){
+  return state.products.filter(p=>scope==='all'||p.verified)
+    .map(p=>option(p.id,p.name+' · '+p.id,selected)).join('');
+}
 function tradeForm(){
   const focusOptions=state.accounts.flatMap(a=>['importer','exporter'].map(role=>
     option(focusValue(a,role),'优先 '+a+' 的'+(role==='exporter'?'出口':'进口')+'业务'))).join('');
-  const productOptions=(state.products||[]).map(p=>option(p.id,p.name+' · '+p.id)).join('');
+  const hasVerified=state.products.some(p=>p.verified);
+  const defaultScope=hasVerified?'verified':'all';
+  const scopeOptions=(hasVerified?option('verified','已结案商品',defaultScope):'')+option('all','全部商品',defaultScope);
   const fields='<div class="fields">'+
     '<label class="field"><span>贸易术语</span><select name="terms" required>'+routeOptionList(termList,'ROTATE','自动轮换贸易术语')+'</select></label>'+
     '<label class="field"><span>结算方式</span><select name="payment" required>'+routeOptionList(paymentList,'AUTO','自动轮换结算方式')+'</select></label>'+
     '<label class="field"><span>角色分配</span><select name="focus">'+option('','均衡轮换')+focusOptions+'</select></label>'+
-    '<label class="field"><span>起始商品</span><select name="product" required>'+productOptions+'</select></label>'+
+    '<label class="field"><span>商品轮换范围</span><select name="product_scope">'+scopeOptions+'</select></label>'+
+    '<label class="field"><span>起始商品</span><select name="product" required>'+productOptions(defaultScope)+'</select></label>'+
     '<label class="field"><span>订单数（1–12）</span><input name="count" type="number" min="1" max="12" step="1" value="'+esc(state.accounts.length)+'" required></label>'+
     '<label class="field"><span>每笔最多箱数</span><input name="cartons" type="number" min="1" max="100" step="1" value="3" required></label>'+
     '<label class="field"><span>最低现金保留比例（%）</span><input name="floor" type="number" min="0" max="100" step="1" value="70" required></label></div>';
@@ -210,7 +217,7 @@ document.addEventListener('submit',async event=>{
     const base=val('base');f.querySelectorAll('input[type=password]').forEach(el=>{el.value=''});await mutate('login',{base,accounts:ac},'正在登录学校平台…');
   }else if(f.id==='quote'){
     const [focus,focus_role='importer']=val('focus').split('|');
-    const job={terms:val('terms'),payment:val('payment'),focus,focus_role,product:val('product'),count:Number(val('count')),cartons:Number(val('cartons')),floor:Number(val('floor')),closing_mail:f.closing_mail.checked};
+    const job={terms:val('terms'),payment:val('payment'),focus,focus_role,product_scope:val('product_scope'),product:val('product'),count:Number(val('count')),cartons:Number(val('cartons')),floor:Number(val('floor')),closing_mail:f.closing_mail.checked};
     if(val('port'))job.port=val('port');
     if(f.custom.checked){job.plans=[...byId('plan-lines').children].map(row=>({terms:row.querySelector('.line-terms').value,payment:row.querySelector('.line-payment').value}));}
     await mutate('preview',job,'正在读取行情和测算报价…');
@@ -244,7 +251,11 @@ document.addEventListener('change',event=>{
   const el=event.target;
   if(el.id==='archive-filter'){archiveFilter=el.value;render();return;}
   const f=el.closest('#quote');
-  if(f){if(el.name==='count'||el.name==='custom')planFields();routeHint();}
+  if(f){
+    if(el.name==='product_scope')f.product.innerHTML=productOptions(el.value,f.product.value);
+    if(el.name==='count'||el.name==='custom')planFields();
+    routeHint();
+  }
 });
 window.addEventListener('hashchange',()=>{if(state){render();}window.scrollTo(0,0);});
 poll();
