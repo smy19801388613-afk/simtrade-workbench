@@ -1,6 +1,9 @@
 """SIMtrade tariff worksheet for this campus fee schedule. Returns forecasts in role currencies."""
 from decimal import Decimal as D,ROUND_HALF_UP,ROUND_CEILING
 
+class UnprofitableQuote(ValueError):
+    """At least one party would lose money or break even at this price."""
+
 def q(x):return str(D(x).quantize(D('.01'),rounding=ROUND_HALF_UP))
 
 def factory_costs(quantity, unit_price, unit_cost, vat_rate):
@@ -25,5 +28,5 @@ def build(p,*,quantity,foreign_unit_USD,domestic_unit_RMB,payment,terms,FX_USD,F
  imcif=cif*usd/fx;duty=imcif*duty_rate;imvat=(imcif+duty)*vat;imfreight=freight*usd/fx if terms=='FOB' else D(0);imprem=premium*usd/fx if terms!='CIF' else D(0);comp=a*usd*D('.05')/fx
  im={'M5007':a*usd/fx,'M5008':imcif,'M5009':inland/fx,'M5010':iminspect,'M5011':D(200)/fx,'M5012':duty,'M5013':imvat,'M5014':D(0),'M5015':imfreight,'M5016':imprem,'M5017':bi/fx,'M5018':comp}
  totalim=sum(v for k,v in im.items() if k!='M5008');sales=n*D(market_unit_local);profitim=sales-totalim;prod,facvat,facfee,profitfac=factory_costs(n,D(domestic_unit_RMB),D(p['cost_rmb']),vat)
- if profitx<=0 or profitim<=0 or (not existing_stock and profitfac<=0):raise ValueError(f'Not all parties profitable: factory={profitfac};export={profitx};import={profitim}')
+ if profitx<=0 or profitim<=0 or (not existing_stock and profitfac<=0):raise UnprofitableQuote(f'Not all parties profitable: factory={profitfac};export={profitx};import={profitim}')
  return {'quantity':int(n),'foreign_unit_USD':str(price),'amount_USD':q(a),'domestic_unit_RMB':str(domestic_unit_RMB),'existing_stock':existing_stock,'payment':payment,'terms':terms,'exporter':{k:q(v) for k,v in ex.items()},'importer':{k:q(v) for k,v in im.items()},'packing':{'quantity':int(n),'cartons':int(cartons),'gross_kg':str(gross),'net_kg':str(net),'volume_cbm':str(vol)},'freight':{'raw_USD':str(freight),'estimated_USD':q(freight),'payer':'buyer' if terms=='FOB' else 'seller'},'insurance':{'amount_usd':q(insured),'premium_usd':q(premium),'rate':str(rate),'payer':'seller' if terms=='CIF' else 'buyer','status':'not_arranged'},'economics':{'export_profit_RMB':q(profitx),'export_cash_delta_RMB':q(profitx+(buy if existing_stock else 0)),'export_new_cash_required_RMB':q(exfees+(0 if existing_stock else buy)),'inventory_cost_consumed_RMB':q(buy),'import_normal_profit_local':q(profitim),'import_sales_local':q(sales),'import_cash_required_local':q(totalim),'factory_profit_RMB':None if existing_stock else q(profitfac),'factory_production_cash_RMB':None if existing_stock else q(prod),'insured_total_loss_profit_local':q(insured*usd/fx-(a*usd/fx+imfreight+imprem+bi/fx+comp))},'rate_snapshot':{'USD_to_RMB':str(usd),'local_to_RMB':str(fx),'insurance':str(rate),'freight_M':str(freight_M),'freight_W':str(freight_W)}}

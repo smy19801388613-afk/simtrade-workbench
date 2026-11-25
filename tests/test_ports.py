@@ -22,7 +22,9 @@ class PortSelectionTests(unittest.TestCase):
         if name not in self.rows:
             return SimpleNamespace()
         english, chinese, country, _ = self.rows[name]
-        return SimpleNamespace(fields={"txtB0501": english, "txtB0502": country, "txtB0503": chinese})
+        return SimpleNamespace(fields={"txtB0501": english, "txtB0502": country, "txtB0503": chinese,
+                                       "txtB0504": self.directory[country]["name_cn"],
+                                       "txtB0513": "45", "txtB0514": "60"})
 
     def test_automatic_and_explicit_selection_for_every_directory_entry(self):
         for country, record in self.directory.items():
@@ -52,3 +54,23 @@ class PortSelectionTests(unittest.TestCase):
         self.assertEqual(_port_details(self.session, "Malaysia", "PENANG")["txtB0502"], "Malasia")
         with self.assertRaises(PortSelectionError):
             _port_details(self.session, "Indonesia", "LOS ANGELES")
+
+    def test_auto_replaces_unusable_freight_but_an_explicit_port_stays_fixed(self):
+        session = SimpleNamespace(get=self.detail)
+        us_rows = [self.rows[name] for name in ("LOS ANGELES", "BOSTON", "HOUSTON")]
+        for unusable in ("", "0", "-3", "NaN", "Infinity"):
+            visited = []
+            def read(name):
+                visited.append(name)
+                detail = self.detail(name)
+                if name == "LOS ANGELES":
+                    detail.fields["txtB0513"] = unusable
+                return detail
+            session.get = read
+            with self.subTest(rate=unusable), patch("market._port_rows", return_value=us_rows):
+                self.assertEqual(_port_details(session, "U.S.A.")["txtB0501"], "BOSTON")
+                self.assertEqual(visited, ["LOS ANGELES", "BOSTON"])
+                visited.clear()
+                with self.assertRaises(PortSelectionError):
+                    _port_details(session, "U.S.A.", "LOS ANGELES")
+                self.assertEqual(visited, ["LOS ANGELES"])

@@ -14,6 +14,7 @@ const empty = (title, hint, action='') => '<div class="empty"><h3>'+esc(title)+'
 const linkButton = (dest, label) => '<a class="btn secondary" href="#'+dest+'">'+esc(label)+'</a>';
 let latestSync='', taskSignature='';
 let portCatalogueRequest;
+const autoPortLabel='按每笔进口商所在国自动选港（可手动指定）';
 let state=null, page='', frame='', image='', runningRequest=false, seq=0, archiveFilter='', previewEdited=false, previewBefore='', schedule;
 const busy = () => runningRequest || state?.task?.status === 'running';
 function feedback(msg='',bad=false){const node=byId('feedback');node.hidden=!msg;node.className='feedback'+(bad?' error':'');node.textContent=msg;}
@@ -144,12 +145,13 @@ function tradeForm(){
     '<label class="field"><span>起始商品</span><select name="product" required>'+productOptions+'</select></label>'+
     '<label class="field"><span>订单数（1–12）</span><input name="count" type="number" min="1" max="12" step="1" value="'+esc(state.accounts.length)+'" required></label>'+
     '<label class="field"><span>每笔最多箱数</span><input name="cartons" type="number" min="1" max="100" step="1" value="3" required></label>'+
-    '<label class="field"><span>最低现金保留比例（%）</span><input name="floor" type="number" min="0" max="100" step="1" value="70" required></label>'+
-    '<div class="field wide"><label for="quote-port">英文目的港（选填）</label><input id="quote-port" name="port" maxlength="60" list="port-choices" aria-describedby="port-hint" placeholder="留空即按每笔进口商所在国自动选港" autocomplete="off"><datalist id="port-choices"></datalist><small id="port-hint" class="hint">手填的港口用于对应国家的订单，其他国家的订单继续自动选港。</small></div></div>';
+    '<label class="field"><span>最低现金保留比例（%）</span><input name="floor" type="number" min="0" max="100" step="1" value="70" required></label></div>';
+  const port='<details class="server-box"><summary id="port-summary">'+autoPortLabel+'</summary>'+
+    '<div class="field"><label for="quote-port">英文目的港（选填）</label><input id="quote-port" name="port" maxlength="60" list="port-choices" aria-describedby="port-hint" placeholder="输入英文港名或从目录选择" autocomplete="off"><datalist id="port-choices"></datalist><small id="port-hint" class="hint">指定港口用于对应国家的订单，其他国家继续自动选港。清空即可恢复全部自动选择。</small></div></details>';
   const plans='<div class="space"><label class="check"><input type="checkbox" name="custom">为每笔订单单独指定搭配</label>'+
     '<div id="custom-box" hidden><div id="plan-lines"></div></div><p id="route-hint" class="note space"></p></div>';
   const submit='<div class="form-foot"><label class="check"><input type="checkbox" name="closing_mail">每单结案后给本单进口商发结款函</label><button class="btn primary" data-lock>生成报价</button></div>';
-  return panel('报价参数','资金保留比例对三个角色分别生效。','<form id="quote">'+fields+plans+submit+'</form>');
+  return panel('报价参数','资金保留比例对三个角色分别生效。','<form id="quote">'+fields+port+plans+submit+'</form>');
 }
 function previewCard(){
   const p=state.preview;if(!p)return '';
@@ -232,6 +234,10 @@ document.addEventListener('click',event=>{
 });
 document.addEventListener('input',event=>{
   const f=event.target.closest('#quote');if(!f)return;
+  if(event.target.id==='quote-port'){
+    const port=event.target.value.trim();
+    byId('port-summary').textContent=port?'指定目的港 '+port:autoPortLabel;
+  }
   if(state.preview&&!previewEdited){previewEdited=true;render();}
 });
 document.addEventListener('change',event=>{

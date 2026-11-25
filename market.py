@@ -1,5 +1,5 @@
 """Read the selected school's student-facing catalogue, market, FX and port pages."""
-from decimal import Decimal as D
+from decimal import Decimal as D, InvalidOperation
 from functools import lru_cache
 import json
 from pathlib import Path
@@ -120,11 +120,10 @@ def batch_ports(platform, buyers, preferred):
     return selected
 
 
-def _port_details(session, country, requested=None):
+def _candidate_rows(session, country, requested, excluded_names):
     region = _country(country)
-    requested = port_input(requested) if requested is not None else ""
     candidate = requested
-    if not candidate:
+    if not candidate and not excluded_names:
         names = sorted(p["name"] for d in port_catalogue().values() if d["name_cn"]==region for p in d["ports"])
         candidate = PREFERRED_PORTS.get(region) or (names[0] if names else "")
     found = _named_rows(session, candidate) if candidate else []
@@ -134,14 +133,64 @@ def _port_details(session, country, requested=None):
             raise PortSelectionError(f"学校目录找不到目的港「{requested}」。请填写 {country} 的英文目的港，或留空。")
         where = "、".join(dict.fromkeys(r[2] for r in found))
         raise PortSelectionError(f"目的港「{requested}」属于 {where}，本笔进口商在 {country}。请改选该国港口，或留空。")
-    if not allowed:
-        allowed = sorted((r for r in _port_rows(session, country=country) if _country(r[2])==region),
-                         key=lambda row:_name(row[0]))
-    for name, _, _, url in allowed:
+    yield from allowed
+    if requested:
+        return
+    # A school may spell the same country in more than one way in its live directory.
+    labels = [country] + [label for label,entry in port_catalogue().items() if entry["name_cn"]==region]
+    for label in {_name(text):text for text in labels}.values():
+        current = _port_rows(session, country=label)
+        yield from sorted((r for r in current if _country(r[2])==region), key=lambda row:_name(row[0]))
+
+
+def _usable_rates(fields):
+    try:
+        rates = [D(str(fields.get(key,""))) for key in ("txtB0513","txtB0514")]
+    except InvalidOperation:
+        return False
+    return all(rate.is_finite() and rate>0 for rate in rates)
+
+
+def iter_port_details(session, country, requested=None, *, exclude=()):
+    """Yield current-school destinations with usable freight; only read further ports on demand."""
+    requested = port_input(requested) if requested is not None else ""
+    region = _country(country)
+    names = {_name(name) for name in exclude}
+    visited = set()
+    for name, _, _, url in _candidate_rows(session, country, requested, names):
+        key = _name(name)
+        if key in names or url in visited:
+            continue
+        visited.add(url)
         fields = session.get(url).fields
-        if _name(fields.get("txtB0501",""))==_name(name) and _country(fields.get("txtB0502",""))==region:
-            return fields
-    raise PortSelectionError(f"当前学校没有可核实的 {country} 目的港。请在海运运费目录核对该国的英文目的港。")
+        if (_name(fields.get("txtB0501",""))!=key or _country(fields.get("txtB0502",""))!=region
+                or not fields.get("txtB0503","").strip() or not fields.get("txtB0504","").strip()
+                or not _usable_rates(fields)):
+            continue
+        names.add(key)
+        yield fields
+
+
+def _port_details(session, country, requested=None):
+    first = next(iter_port_details(session, country, requested), None)
+    if first is not None:
+        return first
+    if requested:
+        raise PortSelectionError(f"目的港「{requested}」的详情或实时运费未能核实。可改选 {country} 的其他港，或留空自动匹配。")
+    raise PortSelectionError(f"本次没有查到国别和实时运费均可核实的 {country} 目的港。请核对学校海运运费目录。")
+
+
+def _port_quote(fields):
+    return dict(port=fields["txtB0501"].strip(), port_cn=fields["txtB0503"], country_cn=fields["txtB0504"],
+                freight_m=fields["txtB0513"], freight_w=fields["txtB0514"])
+
+
+def alternate_ports(platform, buyer, quote):
+    """Reprice only the destination transport costs after a budget failure."""
+    session = platform.session(buyer, "importer")
+    # lookup() on this same student session already followed the freight menu.
+    for fields in iter_port_details(session, quote["country"], exclude=(quote["port"],)):
+        yield _port_quote(fields)
 
 
 def _pick(page, filename, **params):
@@ -234,5 +283,4 @@ def lookup(platform, buyer, factory, product, account_ids, port=None, *, payment
     _open_ports(s, home)
     v=_port_details(s, country, port)
     return dict(product=item,market=str(sale),currency=c2,usd_fx=str(rates["USD"]),local_fx=str(rates[c2]),
-                port=v["txtB0501"].strip(),port_cn=v["txtB0503"],country=country.upper(),country_cn=v["txtB0504"],
-                freight_m=v["txtB0513"],freight_w=v["txtB0514"],**bankers)
+                country=country.upper(), **_port_quote(v), **bankers)

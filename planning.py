@@ -3,8 +3,8 @@ from datetime import date, timedelta, datetime
 from decimal import Decimal as D
 from secrets import token_hex
 
-from market import lookup
-from pricing import build, q
+from market import alternate_ports, lookup
+from pricing import UnprofitableQuote, build, q
 from wording import words_usd, cn_money
 
 
@@ -28,6 +28,48 @@ def party(p, importer):
                 declaration_city_en="SHANGHAI")
 
 
+def _route_quotes(platform, buyer, first, requested_port):
+    yield first
+    if not requested_port:
+        for port_fields in alternate_ports(platform, buyer, first):
+            yield {**first, **port_fields}
+
+
+def _budget_for_port(quote, cartons, domestic_unit, available, terms, payment):
+    product = quote["product"]
+    cost = D(product["cost_rmb"])
+    per_carton = int(D(product["per_carton"]))
+    reason = "预计无法让三方均获利"
+    for count in range(cartons, 0, -1):
+        candidates = []
+        for multiple in ("2.6", "2.8", "3.0", "3.2", "3.4"):
+            price = q(cost * D(multiple) / D(quote["usd_fx"]))
+            try:
+                budget = build(product, quantity=count * per_carton, foreign_unit_USD=price,
+                               domestic_unit_RMB=domestic_unit, payment=payment, terms=terms,
+                               FX_USD=quote["usd_fx"], FX_local=quote["local_fx"],
+                               market_unit_local=quote["market"], freight_M=quote["freight_m"],
+                               freight_W=quote["freight_w"])
+            except UnprofitableQuote:
+                reason = "预计无法让三方均获利"
+                continue
+            econ = budget["economics"]
+            required = {"exporter": econ["export_new_cash_required_RMB"],
+                        "importer": econ["import_cash_required_local"],
+                        "factory": econ["factory_production_cash_RMB"]}
+            if any(D(amount) > available[role] for role, amount in required.items()):
+                reason = "预计最低余额低于角色保留额"
+                continue
+            if D(econ["insured_total_loss_profit_local"]) <= 1:
+                reason = "承保全损情景的预计结余不足"
+                continue
+            margin = min(D(econ["export_profit_RMB"]), D(econ["import_normal_profit_local"]) * D(quote["local_fx"]))
+            candidates.append((margin, budget))
+        if candidates:
+            return max(candidates, key=lambda item: item[0])[1], None
+    return None, reason
+
+
 def new_job(platform, ids, actors, product_id="17001", cartons=3, floor_percent=70, port=None, *, terms="CIF", payment="T/T"):
     if terms not in ("CIF", "CFR", "FOB") or payment not in ("T/T", "D/P", "D/A", "L/C"):
         raise ValueError("请选择平台列出的贸易术语与结算方式。")
@@ -43,29 +85,20 @@ def new_job(platform, ids, actors, product_id="17001", cartons=3, floor_percent=
         raise ValueError("当期余额币种与行情不一致。")
     cash={k:D(str(v["cash"])) for k,v in snaps.items()}
     floors={k:q(v*D(floor_percent)/100) for k,v in cash.items()}
-    p=quote["product"];cost=D(p["cost_rmb"]);per=int(D(p["per_carton"]))
-    dom=q(cost*D("1.6")); failure="无法满足预算"
-    # Price grid in USD around the live factory cost. Prefer balanced exporter/importer margins.
-    for count in range(cartons,0,-1):
-        candidates=[]
-        for mult in ("2.6","2.8","3.0","3.2","3.4"):
-            try:
-                b=build(p,quantity=count*per,foreign_unit_USD=q(cost*D(mult)/D(quote["usd_fx"])),
-                        domestic_unit_RMB=dom,payment=payment,terms=terms,FX_USD=quote["usd_fx"],
-                        FX_local=quote["local_fx"],market_unit_local=quote["market"],
-                        freight_M=quote["freight_m"],freight_W=quote["freight_w"])
-            except ValueError as e:failure=str(e);continue
-            e=b["economics"]
-            required=dict(exporter=e["export_new_cash_required_RMB"],importer=e["import_cash_required_local"],
-                          factory=e["factory_production_cash_RMB"])
-            if any(cash[k]-D(t)<D(floors[k]) for k,t in required.items()):
-                failure="预计最低余额低于角色保留额";continue
-            if D(e["insured_total_loss_profit_local"])<=1:failure="承保全损情景的预计结余不足";continue
-            score=min(D(e["export_profit_RMB"]),D(e["import_normal_profit_local"])*D(quote["local_fx"]))
-            candidates.append((score,b))
-        if candidates:
-            b=max(candidates,key=lambda t:t[0])[1];break
-    else:raise ValueError("无法形成满足本轮条件的报价："+failure)
+    p=quote["product"];cost=D(p["cost_rmb"]);dom=q(cost*D("1.6"))
+    available={role:balance-D(floors[role]) for role,balance in cash.items()}
+    if available["factory"] < D(q(cost*int(D(p["per_carton"])))):
+        raise ValueError("工厂保留资金后不足以生产一箱商品。请核对工厂余额或本轮保留比例。")
+    if available["exporter"] <= 0 or available["importer"] <= 0:
+        raise ValueError("进出口商保留资金后缺少可用于本单的余额。请核对角色资金或保留比例。")
+    for tried, candidate in enumerate(_route_quotes(platform,buyer,quote,port), 1):
+        b, failure = _budget_for_port(candidate,cartons,dom,available,terms,payment)
+        if b is not None:
+            quote = candidate
+            break
+    else:
+        scope = f"指定目的港 {port}" if port else f"{quote['country']} 可用的 {tried} 个目的港"
+        raise ValueError(f"已试算{scope}，在本轮箱数、报价和保留资金条件下均无法成交。最后一次试算：{failure}。")
     start=date.today(); until=(start+timedelta(days=21)).isoformat(); suffix=start.strftime("%y%m%d")+token_hex(3).upper()
     ct="WB"+suffix; dc="WD"+suffix; pk=b["packing"]; tax=p["tax"]
     product=dict(p,quantity=b["quantity"],cartons=pk["cartons"],gross_kg=pk["gross_kg"],
