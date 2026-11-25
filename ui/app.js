@@ -13,6 +13,7 @@ const panel = (title, hint, body) => '<section class="panel"><div class="section
 const empty = (title, hint, action='') => '<div class="empty"><h3>'+esc(title)+'</h3><p>'+esc(hint)+'</p>'+action+'</div>';
 const linkButton = (dest, label) => '<a class="btn secondary" href="#'+dest+'">'+esc(label)+'</a>';
 let latestSync='', taskSignature='';
+let portCatalogueRequest;
 let state=null, page='', frame='', image='', runningRequest=false, seq=0, archiveFilter='', previewEdited=false, previewBefore='', schedule;
 const busy = () => runningRequest || state?.task?.status === 'running';
 function feedback(msg='',bad=false){const node=byId('feedback');node.hidden=!msg;node.className='feedback'+(bad?' error':'');node.textContent=msg;}
@@ -67,7 +68,7 @@ function render(){
   const route=pageId(), key=JSON.stringify([route,state.accounts,state.base,state.routes,state.products]);
   if(page!==route)feedback();
   page=route;header();
-  if(frame!==key){frame=key;image='';archiveFilter='';byId('view').innerHTML=skeleton();if(byId('login'))addAccount();if(byId('quote')){planFields();routeHint();}}
+  if(frame!==key){frame=key;image='';archiveFilter='';byId('view').innerHTML=skeleton();if(byId('login'))addAccount();if(byId('quote')){planFields();routeHint();fillPortChoices(byId('port-choices'));}}
   const dynamic=byId('live-data');
   if(dynamic){
     const signature=JSON.stringify([state.task,state.preview,state.jobs,state.role_rows,archiveFilter,previewEdited,page]);
@@ -119,6 +120,19 @@ function overview(){
 function focusValue(account,role){
   return role==='exporter'?account+'|exporter':account;
 }
+async function fillPortChoices(list){
+  try{
+    portCatalogueRequest ??= request('ports');
+    const catalogue=await portCatalogueRequest;
+    if(!list.isConnected)return;
+    list.innerHTML=Object.entries(catalogue).flatMap(([country,entry])=>
+      entry.ports.map(port=>option(port.name,[entry.name_cn,country,port.name_cn].filter(Boolean).join(' · ')))
+    ).join('');
+  }catch{
+    // The field still accepts a typed name. Reopen the quote form to retry the suggestions.
+    portCatalogueRequest=null;
+  }
+}
 function tradeForm(){
   const focusOptions=state.accounts.flatMap(a=>['importer','exporter'].map(role=>
     option(focusValue(a,role),'优先 '+a+' 的'+(role==='exporter'?'出口':'进口')+'业务'))).join('');
@@ -131,7 +145,7 @@ function tradeForm(){
     '<label class="field"><span>订单数（1–12）</span><input name="count" type="number" min="1" max="12" step="1" value="'+esc(state.accounts.length)+'" required></label>'+
     '<label class="field"><span>每笔最多箱数</span><input name="cartons" type="number" min="1" max="100" step="1" value="3" required></label>'+
     '<label class="field"><span>最低现金保留比例（%）</span><input name="floor" type="number" min="0" max="100" step="1" value="70" required></label>'+
-    '<label class="field wide"><span>英文目的港（选填）</span><input name="port" maxlength="60" placeholder="留空时按进口商所在国家匹配"></label></div>';
+    '<div class="field wide"><label for="quote-port">英文目的港（选填）</label><input id="quote-port" name="port" maxlength="60" list="port-choices" aria-describedby="port-hint" placeholder="留空即按每笔进口商所在国自动选港" autocomplete="off"><datalist id="port-choices"></datalist><small id="port-hint" class="hint">手填的港口用于对应国家的订单，其他国家的订单继续自动选港。</small></div></div>';
   const plans='<div class="space"><label class="check"><input type="checkbox" name="custom">为每笔订单单独指定搭配</label>'+
     '<div id="custom-box" hidden><div id="plan-lines"></div></div><p id="route-hint" class="note space"></p></div>';
   const submit='<div class="form-foot"><label class="check"><input type="checkbox" name="closing_mail">每单结案后给本单进口商发结款函</label><button class="btn primary" data-lock>生成报价</button></div>';

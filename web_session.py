@@ -8,7 +8,7 @@ from secrets import token_urlsafe
 from threading import RLock, Thread
 
 from live_platform import LivePlatform, archive_origins
-from market import PRODUCTS
+from market import PRODUCTS, batch_ports, port_input
 from model_provider import ModelProviderError, _destination, ask_model
 from pipeline import read, store_new
 from planning import new_job, rotation
@@ -218,6 +218,7 @@ class DesktopSession:
 
     def prepare(self, body):
         count = whole_number(body.get("count",1),1,12,"订单数")
+        preferred_port = port_input(body.get("port",""))
         cartons = whole_number(body.get("cartons",3),1,100,"箱数")
         floor = whole_number(body.get("floor",70),0,100,"保留资金百分比")
         sku, term = body.get("product"), body.get("terms","CIF")
@@ -249,13 +250,14 @@ class DesktopSession:
         self.quoted, self.preview, self.preview_params = [], None, None
         def quote_batch():
             quotes=[]
-            for i in range(count):
-                actors=order[i%len(order)]
+            participants = [order[i%len(order)] for i in range(count)]
+            ports = batch_ports(self.platform, [actors[1] for actors in participants], preferred_port or None)
+            for i,actors in enumerate(participants):
                 product=product_ids[(first+i)%len(product_ids)]
                 t,p=(plans[i]["terms"],plans[i]["payment"]) if plans is not None else (term,payment)
                 pair=pick_route(actors,self.history+quotes,t,p)
                 self.log(f"第 {i+1}/{count} 笔：核对{PRODUCTS[product][0]}行情、运费和三方余额")
-                options = {"port":body.get("port") or None,"terms":pair[0],"payment":pair[1]}
+                options = {"port":ports[actors[1]],"terms":pair[0],"payment":pair[1]}
                 job=new_job(self.platform,ids,actors,product,cartons,floor,**options)
                 job["closing_mail"]=send_mail
                 if (job["case"]["terms"],job["case"]["payment"])!=pair:raise ValueError("生成的合同方式与所选方式不符。")

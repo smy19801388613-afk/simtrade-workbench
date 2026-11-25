@@ -1,15 +1,147 @@
 """Read the selected school's student-facing catalogue, market, FX and port pages."""
 from decimal import Decimal as D
+from functools import lru_cache
+import json
+from pathlib import Path
 import re
-from urllib.parse import quote, urlsplit, parse_qs
+import unicodedata
+from urllib.parse import parse_qs, urlencode, urlsplit
 from live_platform import PlatformError, _menu_link
 
 # These are market-list page hints, not prices. If the catalogue order changes, search the remaining pages.
 PRODUCTS = {"17001": ("床单", 33), "03001": ("壁钟", 5), "13001": ("直杆伞", 25),
             "15002": ("手提包", 29), "19001": ("男士皮鞋", 37),
             "22003": ("组合螺丝刀", 42), "30001": ("网球", 47), "08001": ("儿童踏板车", 15)}
-PORTS = {"indonesia": "JAKARTA", "united kingdom": "LONDON", "australia": "MELBOURNE",
-         "france": "MARSEILLES", "uk": "LONDON"}
+PREFERRED_PORTS = {"印度尼西亚":"JAKARTA", "英国":"LONDON", "澳大利亚":"MELBOURNE",
+                   "法国":"MARSEILLES", "美国":"LOS ANGELES"}
+
+
+@lru_cache(maxsize=1)
+def port_catalogue():
+    with Path(__file__).with_name("port_catalogue.json").open(encoding="utf-8") as file:
+        return json.load(file)
+
+
+def _name(text):
+    return " ".join(unicodedata.normalize("NFKC", text).split()).casefold()
+
+
+@lru_cache(maxsize=1)
+def _country_names():
+    # Some school labels (e.g. "Malasia" and "Malaysia") share one Chinese name.
+    names = {}
+    for english, record in port_catalogue().items():
+        chinese = record["name_cn"]
+        names[_name(english)] = names[_name(chinese)] = chinese
+    aliases = {"us":"美国", "u.s.":"美国", "usa":"美国", "united states":"美国",
+               "united states of america":"美国", "uk":"英国", "u.k.":"英国",
+               "germany":"德国", "myanmar":"缅甸", "philippines":"菲律宾",
+               "romania":"罗马尼亚", "sri lanka":"斯里兰卡", "south korea":"韩国",
+               "republic of korea":"韩国"}
+    return {**aliases, **names}
+
+
+def _country(text):
+    key = _name(text)
+    return _country_names().get(key, key)
+
+
+class PortSelectionError(ValueError):
+    """The student can select another port or correct the importer profile."""
+
+
+def port_input(text):
+    if not isinstance(text, str) or len(text)>100 or any(
+            not (ch.isalnum() or unicodedata.category(ch).startswith("M") or ch in " .,'’-()/&")
+            for ch in text):
+        raise PortSelectionError("请填写学校目录中的完整目的港名，或留空自动匹配。")
+    return text.strip()
+
+
+def _open_ports(session, home):
+    freight = session.get(_pick(home, "Query_Freight.aspx"))
+    session.get(_pick(freight, "QueryFreight.aspx"))
+
+
+def _port_rows(session, *, name="", country=""):
+    query = urlencode({"cls":"export", "c":country, "p":name, "l":0})
+    page = session.get("Query/outPort.aspx?" + query)
+    pages = next((c["options"] for c in page.controls if c.get("name")=="ctrPages:pages"), [])
+    rows = []
+    for number in [None] + [o["value"] for o in pages if o["value"]!="1"]:
+        if number:
+            page = session.post(page, "ctrPages$pages", {"ctrPages:pages":number})
+        links = {}
+        for url in page.urls:
+            parsed = urlsplit(url)
+            if parsed.path.lower().endswith("/viewport_o.aspx"):
+                for key in parse_qs(parsed.query).get("no", ()):
+                    links.setdefault(_name(key), set()).add(url)
+        for row in page.rows:
+            if len(row)<6:
+                continue
+            english, chinese, region = row[2:5]
+            targets = links.get(_name(english), ())
+            if len(targets)==1:
+                rows.append((english, chinese, region, next(iter(targets))))
+    return rows
+
+
+def _named_rows(session, name):
+    return [r for r in _port_rows(session, name=name) if _name(name) in (_name(r[0]), _name(r[1]))]
+
+
+def _import_country(platform, buyer):
+    country = platform.profile(buyer, "importer").get("txtB0337", "").strip()
+    if not country:
+        raise PortSelectionError(f"进口商 {buyer} 的所属国家为空，请先核对进口商档案。")
+    return country
+
+
+def batch_ports(platform, buyers, preferred):
+    """Return the optional manual override for each importer in this preview."""
+    buyers = list(dict.fromkeys(buyers))
+    selected = {buyer: preferred for buyer in buyers}
+    if not preferred or len(buyers)<2:
+        return selected
+    countries = {buyer:_import_country(platform, buyer) for buyer in buyers}
+    if len({_country(country) for country in countries.values()})==1:
+        return selected
+    session = platform.session(buyers[0], "importer")
+    _open_ports(session, session.get(_pick(session.home, "query_first.aspx")))
+    matches = _named_rows(session, preferred)
+    if not matches:
+        raise PortSelectionError(f"当前学校的目的港目录找不到「{preferred}」。请核对港名，或留空自动匹配。")
+    regions = {_country(row[2]) for row in matches}
+    selected = {buyer:preferred if _country(country) in regions else None for buyer,country in countries.items()}
+    if not any(selected.values()):
+        names = "、".join(dict.fromkeys(countries.values()))
+        raise PortSelectionError(f"目的港「{preferred}」与本批进口商国家（{names}）都不匹配。请更换港口或留空。")
+    return selected
+
+
+def _port_details(session, country, requested=None):
+    region = _country(country)
+    requested = port_input(requested) if requested is not None else ""
+    candidate = requested
+    if not candidate:
+        names = sorted(p["name"] for d in port_catalogue().values() if d["name_cn"]==region for p in d["ports"])
+        candidate = PREFERRED_PORTS.get(region) or (names[0] if names else "")
+    found = _named_rows(session, candidate) if candidate else []
+    allowed = [r for r in found if _country(r[2])==region]
+    if requested and not allowed:
+        if not found:
+            raise PortSelectionError(f"学校目录找不到目的港「{requested}」。请填写 {country} 的英文目的港，或留空。")
+        where = "、".join(dict.fromkeys(r[2] for r in found))
+        raise PortSelectionError(f"目的港「{requested}」属于 {where}，本笔进口商在 {country}。请改选该国港口，或留空。")
+    if not allowed:
+        allowed = sorted((r for r in _port_rows(session, country=country) if _country(r[2])==region),
+                         key=lambda row:_name(row[0]))
+    for name, _, _, url in allowed:
+        fields = session.get(url).fields
+        if _name(fields.get("txtB0501",""))==_name(name) and _country(fields.get("txtB0502",""))==region:
+            return fields
+    raise PortSelectionError(f"当前学校没有可核实的 {country} 目的港。请在海运运费目录核对该国的英文目的港。")
 
 
 def _pick(page, filename, **params):
@@ -60,10 +192,7 @@ def catalogue_item(s, product, *, require_export_route=True):
 
 def lookup(platform, buyer, factory, product, account_ids, port=None, *, payment="T/T"):
     s=platform.session(buyer,"importer"); f=platform.session(factory,"factory")
-    country = platform.profile(buyer,"importer")["txtB0337"]
-    port=(port or PORTS.get(country.strip().lower(),"")).upper()
-    if not port or not re.fullmatch(r"[A-Z .'-]{2,50}",port):
-        raise ValueError("请按进口商所在国填写平台收录的英文目的港。")
+    country = _import_country(platform, buyer)
     item,home=catalogue_item(s,product)
     hint=PRODUCTS[product][1]
     c1,cost=market_price(f,product,hint); c2,sale=market_price(s,product,hint)
@@ -102,11 +231,8 @@ def lookup(platform, buyer, factory, product, account_ids, port=None, *, payment
         if payment=="L/C":
             raise ValueError("信用证需在所选账号内找到有完整资料的两种银行角色。出口地银行需中英文名、英文地址、电话和传真，进口地银行需英文名和英文地址。请补齐缺项后重新报价。")
         raise ValueError("参与账号在银行目录中缺少出口地或进口地银行，不能自动填写合同。")
-    freight=s.get(_pick(home,"Query_Freight.aspx"));s.get(_pick(freight,"QueryFreight.aspx"))
-    ports=s.get("Query/outPort.aspx?cls=export&c=&p="+quote(port)+"&l=0")
-    v=s.get(_pick(ports,"viewPort_o.aspx",no=port)).fields
-    if v["txtB0501"].upper()!=port or v["txtB0502"].lower()!=country.lower():
-        raise ValueError("目的港国家与进口商档案不同。")
+    _open_ports(s, home)
+    v=_port_details(s, country, port)
     return dict(product=item,market=str(sale),currency=c2,usd_fx=str(rates["USD"]),local_fx=str(rates[c2]),
-                port=port,port_cn=v["txtB0503"],country=country.upper(),country_cn=v["txtB0504"],
+                port=v["txtB0501"].strip(),port_cn=v["txtB0503"],country=country.upper(),country_cn=v["txtB0504"],
                 freight_m=v["txtB0513"],freight_w=v["txtB0514"],**bankers)

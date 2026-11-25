@@ -36,6 +36,7 @@ class _Assets(HTMLParser):
 
 def _check():
     from handoff import SKILL, recover
+    from market import port_catalogue
     from try_handoff import DraftExampleHost, scripted_answer
 
     ui = Path(__file__).resolve().parent / "ui"
@@ -53,12 +54,16 @@ def _check():
         raise ValueError("缺少工作台操作手册，请重新完整解压安装包。")
     if set(AUTOMATIC_PAIRS) != {(t,p) for t in TERMS for p in PAYMENTS}:
         raise ValueError("交易路线表覆盖不完整。")
+    directory=port_catalogue()
+    if not directory or not all(entry["ports"] for entry in directory.values()):
+        raise ValueError("工作台的目的港目录不完整，请重新完整解压安装包。")
+    port_count=sum(len(entry["ports"]) for entry in directory.values())
     with redirect_stdout(StringIO()):
         status, _ = recover(DraftExampleHost(), scripted_answer)
     if status != "resume_rules":
         raise ValueError("离线单据恢复自检未通过。")
     return (f"本机终端自检通过。界面入口及 {len(assets.files)} 个页面文件可读取，"
-            f"操作手册已就位，{len(AUTOMATIC_PAIRS)} 种交易组合已加载，离线单据恢复验证通过。")
+            f"操作手册已就位，{len(AUTOMATIC_PAIRS)} 种交易组合和 {port_count} 个目的港已加载，离线单据恢复验证通过。")
 
 
 def _pause_note(job):

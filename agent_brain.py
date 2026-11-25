@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import unicodedata
 
-from market import PRODUCTS
+from market import PRODUCTS, port_catalogue, port_input
 from trade_modes import PAYMENTS, TERMS
 
 
@@ -116,8 +116,21 @@ def _constraints(text, ctx):
         out.update(focus=account,focus_role=role)
     elif role in ("exporter","importer") and re.search(r"优先|指定",txt) and len(ctx.get("accounts",[]))>1:
         raise ValueError("希望优先哪个账号的这个角色？")
-    port=re.search(r"(?:目的港|运到|目的地)\s*[:：为是]?\s*([A-Z][A-Z .'-]{1,45})(?=[，,。;；]|$|[\u4e00-\u9fff])",txt)
-    if port:out["port"]=port[1].strip()
+    port=re.search(r"(?:目的港|运到|目的地)\s*(?:改为|改成|[:：为是])?\s*([^，。;；\n]+)",txt)
+    if port:
+        phrase=port[1].strip()
+        if phrase.startswith(("自动","留空")):
+            out["port"]=""
+        else:
+            english=re.match(r"[A-Z\u00c0-\u024f0-9][A-Z\u00c0-\u024f0-9 .'’/()&-]*",phrase)
+            if english:
+                out["port"]=port_input(english[0])
+            else:
+                for record in port_catalogue().values():
+                    names=[p["name_cn"] for p in record["ports"] if p["name_cn"] and phrase.startswith(p["name_cn"])]
+                    if names:
+                        out["port"]=max(names,key=len)
+                        break
     return out
 
 
@@ -300,7 +313,7 @@ def _instructions():
             "preview 的 count 是1–12笔，cartons 是每笔上限1–100箱，floor 是现金保留百分数0–100。"
             "商品必须用提供的 id；箱数与销售件数分开。无明确商品时先询问。terms 可选 FOB/CFR/CIF/ROTATE；"
             "payment 可选 T/T,D/P,D/A,L/C,AUTO；逐笔选用 plans=[{terms,payment},…]，条数等于 count；"
-            "focus 为 A/B/C，focus_role 为 importer/exporter。可沿用最近报价参数。"
+            "focus 为 A/B/C，focus_role 为 importer/exporter。port 留空将按每笔进口商国家选港；指定港名只适用于本批匹配该国的进口商。可沿用最近报价参数。"
             "只使用匿名账号、合同。提供的工具是此应用可实际执行的能力，终端可运行自检/核账。"
             "不索取或推断密码、密钥和 Cookie，不生成外部可执行命令。以下为课程业务参考。\n"+"\n".join(refs))
 
@@ -326,7 +339,7 @@ def _decision(raw,ctx):
         if args.get("product") not in products(ctx):raise ValueError("商品编号有误。")
         if args.get("terms","CIF") not in (*TERMS,"ROTATE") or args.get("payment","T/T") not in (*PAYMENTS,"AUTO"):raise ValueError("合同条款有误。")
         if args.get("focus_role","importer") not in ("importer","exporter"):raise ValueError("优先角色有误。")
-        if "port" in args and (not isinstance(args["port"],str) or not re.fullmatch(r"[A-Za-z .'-]{2,50}",args["port"])):raise ValueError("目的港有误。")
+        if "port" in args:args["port"]=port_input(args["port"])
         for key,lo,hi in (("count",1,12),("cartons",1,100),("floor",0,100)):
             if key in args and (type(args[key])!=int or not lo<=args[key]<=hi):raise ValueError("报价数字有误。")
         if "plans" in args and (not isinstance(args["plans"],list) or len(args["plans"])!=args.get("count",1) or

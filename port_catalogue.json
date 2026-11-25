@@ -1,0 +1,1407 @@
+{
+  "Algeria": {
+    "name_cn": "阿尔及利亚",
+    "ports": [
+      {
+        "name": "ALGIERS",
+        "name_cn": "阿尔及耳",
+        "code": "DZALG"
+      }
+    ]
+  },
+  "Australia": {
+    "name_cn": "澳大利亚",
+    "ports": [
+      {
+        "name": "ADELAIDE",
+        "name_cn": "阿德莱德",
+        "code": "AUADE"
+      },
+      {
+        "name": "BELL BAY",
+        "name_cn": "贝尔贝",
+        "code": "AUBLB"
+      },
+      {
+        "name": "BRISBANE",
+        "name_cn": "布里斯班",
+        "code": "AUBRI"
+      },
+      {
+        "name": "BURNIE",
+        "name_cn": "伯尼",
+        "code": "AUBNE"
+      },
+      {
+        "name": "FREMANTLE",
+        "name_cn": "弗里曼特尔",
+        "code": "AUFRE"
+      },
+      {
+        "name": "HOBART",
+        "name_cn": "霍巴特",
+        "code": "AUHBT"
+      },
+      {
+        "name": "MELBOURNE",
+        "name_cn": "墨尔本",
+        "code": "AUMEL"
+      },
+      {
+        "name": "PERTH",
+        "name_cn": "佩斯",
+        "code": "AUPTH"
+      },
+      {
+        "name": "SYDNEY",
+        "name_cn": "悉尼",
+        "code": "AUSYD"
+      }
+    ]
+  },
+  "Bahrain": {
+    "name_cn": "巴林",
+    "ports": [
+      {
+        "name": "BAHRAIN",
+        "name_cn": "巴林",
+        "code": "BHBAH"
+      }
+    ]
+  },
+  "Belgium": {
+    "name_cn": "比利时",
+    "ports": [
+      {
+        "name": "ANTWERP",
+        "name_cn": "安特卫普",
+        "code": "BEANR"
+      },
+      {
+        "name": "BRUSSELS",
+        "name_cn": "布鲁塞尔",
+        "code": "BEBRU"
+      },
+      {
+        "name": "ZEEBRUGGE",
+        "name_cn": "泽布吕赫",
+        "code": "BEZEE"
+      }
+    ]
+  },
+  "Bulgaria": {
+    "name_cn": "保加利亚",
+    "ports": [
+      {
+        "name": "VARNA",
+        "name_cn": "瓦尔那",
+        "code": "BGVAR"
+      }
+    ]
+  },
+  "Burma": {
+    "name_cn": "缅甸",
+    "ports": [
+      {
+        "name": "YANGON",
+        "name_cn": "仰光",
+        "code": "BUYAN"
+      }
+    ]
+  },
+  "Cambodia": {
+    "name_cn": "柬埔寨",
+    "ports": [
+      {
+        "name": "KOMPONG SOM",
+        "name_cn": "磅逊",
+        "code": "KHKPS"
+      },
+      {
+        "name": "PHNOM PENH",
+        "name_cn": "金边",
+        "code": "KHPNH"
+      }
+    ]
+  },
+  "Canada": {
+    "name_cn": "加拿大",
+    "ports": [
+      {
+        "name": "MONTREAL",
+        "name_cn": "蒙特娄",
+        "code": "CAMTR"
+      },
+      {
+        "name": "PORT COQUITLAM",
+        "name_cn": "科奎特兰港",
+        "code": "CACOQ"
+      },
+      {
+        "name": "TORONTO",
+        "name_cn": "多伦多",
+        "code": "CATOR"
+      },
+      {
+        "name": "VANCOUVER",
+        "name_cn": "温哥华",
+        "code": "CAVAN"
+      }
+    ]
+  },
+  "Cyprus": {
+    "name_cn": "塞浦路斯",
+    "ports": [
+      {
+        "name": "LIMASSOL",
+        "name_cn": "利马索",
+        "code": "CYLMS"
+      }
+    ]
+  },
+  "Egypt": {
+    "name_cn": "埃及",
+    "ports": [
+      {
+        "name": "ALEXANDRIA",
+        "name_cn": "亚历山大",
+        "code": "EGALY"
+      }
+    ]
+  },
+  "Finland": {
+    "name_cn": "芬兰",
+    "ports": [
+      {
+        "name": "HANKO",
+        "name_cn": "汉科",
+        "code": "FIHAN"
+      },
+      {
+        "name": "HELSINKI",
+        "name_cn": "赫尔新基",
+        "code": "FIHEL"
+      },
+      {
+        "name": "KOTKA",
+        "name_cn": "科特卡",
+        "code": "FIKTK"
+      },
+      {
+        "name": "PORI",
+        "name_cn": "波里",
+        "code": "FIPRI"
+      },
+      {
+        "name": "TURKU",
+        "name_cn": "图尔库",
+        "code": "FITUR"
+      }
+    ]
+  },
+  "France": {
+    "name_cn": "法国",
+    "ports": [
+      {
+        "name": "BORDEAUX",
+        "name_cn": "波尔多",
+        "code": "FRBOR"
+      },
+      {
+        "name": "CALAIS",
+        "name_cn": "加来",
+        "code": "FRCAL"
+      },
+      {
+        "name": "DUNKIRK",
+        "name_cn": "敦刻尔克",
+        "code": "FRDKK"
+      },
+      {
+        "name": "FOS",
+        "name_cn": "福斯",
+        "code": "FRFOS"
+      },
+      {
+        "name": "LE HAVRE",
+        "name_cn": "利哈佛",
+        "code": "FRLEH"
+      },
+      {
+        "name": "MARSEILLES",
+        "name_cn": "马赛",
+        "code": "FRMRS"
+      },
+      {
+        "name": "NICE",
+        "name_cn": "尼斯",
+        "code": "FRNIC"
+      },
+      {
+        "name": "PARIS",
+        "name_cn": "帕里斯",
+        "code": "FRPRS"
+      }
+    ]
+  },
+  "German": {
+    "name_cn": "德国",
+    "ports": [
+      {
+        "name": "BONN",
+        "name_cn": "波恩",
+        "code": "DEBON"
+      },
+      {
+        "name": "BREMEN",
+        "name_cn": "不来梅",
+        "code": "DEBRE"
+      },
+      {
+        "name": "CUXHAVEN",
+        "name_cn": "库克斯港",
+        "code": "DECUX"
+      },
+      {
+        "name": "DUISBURGH",
+        "name_cn": "杜伊斯堡",
+        "code": "DEDUI"
+      },
+      {
+        "name": "DUSSELEDORF",
+        "name_cn": "杜塞尔多夫",
+        "code": "DEDUS"
+      },
+      {
+        "name": "FRANKFURT",
+        "name_cn": "法兰克福",
+        "code": "DEFRA"
+      },
+      {
+        "name": "HAMBURG",
+        "name_cn": "汉堡",
+        "code": "DEHAM"
+      },
+      {
+        "name": "KOLN",
+        "name_cn": "科隆",
+        "code": "DECOL"
+      },
+      {
+        "name": "MANNHEIM",
+        "name_cn": "曼海姆",
+        "code": "DEMHM"
+      },
+      {
+        "name": "ROSTOCK",
+        "name_cn": "罗斯托克",
+        "code": "DEROS"
+      }
+    ]
+  },
+  "Greece": {
+    "name_cn": "希腊",
+    "ports": [
+      {
+        "name": "PIRAEUS",
+        "name_cn": "比里夫斯",
+        "code": "GRPIR"
+      },
+      {
+        "name": "THESSALONIKI",
+        "name_cn": "塞沙罗奈基",
+        "code": "GRSKG"
+      }
+    ]
+  },
+  "India": {
+    "name_cn": "印度",
+    "ports": [
+      {
+        "name": "BOMBAY",
+        "name_cn": "孟买",
+        "code": "INBOM"
+      },
+      {
+        "name": "CALCUTTA",
+        "name_cn": "加尔各答",
+        "code": "INCCU"
+      },
+      {
+        "name": "CALICUT",
+        "name_cn": "卡利卡特",
+        "code": "INCCT"
+      },
+      {
+        "name": "COCHIN",
+        "name_cn": "科钦",
+        "code": "INCOC"
+      },
+      {
+        "name": "KENDLA",
+        "name_cn": "根德拉",
+        "code": "INKEN"
+      },
+      {
+        "name": "MADRAS",
+        "name_cn": "马德拉斯",
+        "code": "INMAA"
+      },
+      {
+        "name": "MAHE",
+        "name_cn": "马埃",
+        "code": "INMAH"
+      },
+      {
+        "name": "NHAVA SHEVA",
+        "name_cn": "圣凡",
+        "code": "INNSH"
+      },
+      {
+        "name": "SURAT",
+        "name_cn": "苏拉特",
+        "code": "INSUR"
+      },
+      {
+        "name": "TUTICORIN",
+        "name_cn": "杜蒂戈林",
+        "code": "INTUT"
+      }
+    ]
+  },
+  "Indonesia": {
+    "name_cn": "印度尼西亚",
+    "ports": [
+      {
+        "name": "BELAWAN",
+        "name_cn": "不老湾",
+        "code": "IDBLW"
+      },
+      {
+        "name": "BENGKALIS",
+        "name_cn": "望加丽",
+        "code": "IDBLS"
+      },
+      {
+        "name": "DUMAI",
+        "name_cn": "杜迈",
+        "code": "IDDMI"
+      },
+      {
+        "name": "JAKARTA",
+        "name_cn": "雅加达",
+        "code": "IDJAK"
+      },
+      {
+        "name": "MEDAN",
+        "name_cn": "棉兰",
+        "code": "IDMED"
+      },
+      {
+        "name": "PALEMBANG",
+        "name_cn": "巨港",
+        "code": "IDPAL"
+      },
+      {
+        "name": "PANJANG",
+        "name_cn": "潘姜",
+        "code": "IDPJG"
+      },
+      {
+        "name": "PAVLAV BATAM",
+        "name_cn": "巴塔姆岛",
+        "code": "IDPBA"
+      },
+      {
+        "name": "PONTIANAK",
+        "name_cn": "坤甸",
+        "code": "IDPNK"
+      },
+      {
+        "name": "SEMARANG",
+        "name_cn": "三宝垄",
+        "code": "IDSRG"
+      },
+      {
+        "name": "SURABAYA",
+        "name_cn": "泗水",
+        "code": "IDSUR"
+      },
+      {
+        "name": "TANJING PRIOK",
+        "name_cn": "丹戎不碌",
+        "code": "IDTPR"
+      }
+    ]
+  },
+  "Iran": {
+    "name_cn": "伊朗",
+    "ports": [
+      {
+        "name": "BANDAR ABBAS",
+        "name_cn": "阿巴斯",
+        "code": "IRBND"
+      },
+      {
+        "name": "BANDAR KHOMEIN",
+        "name_cn": "霍梅尼港",
+        "code": "IRBKH"
+      }
+    ]
+  },
+  "Israel": {
+    "name_cn": "以色列",
+    "ports": [
+      {
+        "name": "ASHDOD",
+        "name_cn": "亚实突",
+        "code": "ILASH"
+      },
+      {
+        "name": "HAIFA",
+        "name_cn": "海法",
+        "code": "ILHFA"
+      }
+    ]
+  },
+  "Italy": {
+    "name_cn": "意大利",
+    "ports": [
+      {
+        "name": "ANCONA",
+        "name_cn": "安科纳",
+        "code": "ITANC"
+      },
+      {
+        "name": "BARI",
+        "name_cn": "巴里",
+        "code": "ITBAR"
+      },
+      {
+        "name": "CIVITAVECCHIA",
+        "name_cn": "奇维塔韦基亚",
+        "code": "ITCIV"
+      },
+      {
+        "name": "GENOA",
+        "name_cn": "热那亚",
+        "code": "ITGOA"
+      },
+      {
+        "name": "GIOIA TRURO",
+        "name_cn": "焦亚陶罗",
+        "code": "ITGTO"
+      },
+      {
+        "name": "LA SPEZIA",
+        "name_cn": "拉斯皮查",
+        "code": "ITSPE"
+      },
+      {
+        "name": "LIVORNO",
+        "name_cn": "利马诺",
+        "code": "ITLIV"
+      },
+      {
+        "name": "NAPLES",
+        "name_cn": "那不勒斯",
+        "code": "ITNAP"
+      },
+      {
+        "name": "PALERMO",
+        "name_cn": "巴勒莫",
+        "code": "ITPAL"
+      },
+      {
+        "name": "RAVENNA",
+        "name_cn": "腊万纳",
+        "code": "ITRAV"
+      },
+      {
+        "name": "REYKJAVIK",
+        "name_cn": "雷克雅未克",
+        "code": "ISREY"
+      },
+      {
+        "name": "SALERNO",
+        "name_cn": "萨莱诺",
+        "code": "ITSAL"
+      },
+      {
+        "name": "SPEZIA",
+        "name_cn": "斯佩齐亚",
+        "code": "ITSPE"
+      },
+      {
+        "name": "TARANTO",
+        "name_cn": "塔兰托",
+        "code": "ITTAR"
+      },
+      {
+        "name": "TRIESTE",
+        "name_cn": "的港",
+        "code": "ITTRS"
+      },
+      {
+        "name": "VENICE",
+        "name_cn": "威尼斯",
+        "code": "ITVEN"
+      }
+    ]
+  },
+  "Japan": {
+    "name_cn": "日本",
+    "ports": [
+      {
+        "name": "CHIBA",
+        "name_cn": "千叶",
+        "code": "JPCHB"
+      },
+      {
+        "name": "HAKATA",
+        "name_cn": "博多",
+        "code": "JPHKA"
+      },
+      {
+        "name": "HIROSHIMA",
+        "name_cn": "广岛",
+        "code": "JPHIJ"
+      },
+      {
+        "name": "KANAZAWA",
+        "name_cn": "金泽",
+        "code": "JPKNA"
+      },
+      {
+        "name": "MAIZURU",
+        "name_cn": "舞鹤",
+        "code": "JPMAI"
+      },
+      {
+        "name": "MIZUSHIMA",
+        "name_cn": "水岛",
+        "code": "JPMIZ"
+      },
+      {
+        "name": "NAOETSU",
+        "name_cn": "直江津",
+        "code": "JPNAO"
+      },
+      {
+        "name": "NIIGATA",
+        "name_cn": "新泻",
+        "code": "JPNTA"
+      },
+      {
+        "name": "OITA",
+        "name_cn": "大分",
+        "code": "JPOIT"
+      },
+      {
+        "name": "SAKAIMINATO",
+        "name_cn": "境港",
+        "code": "JPSAK"
+      },
+      {
+        "name": "SHIMIZU",
+        "name_cn": "清水",
+        "code": "JPSMZ"
+      },
+      {
+        "name": "TOKYO",
+        "name_cn": "东京",
+        "code": "JPTOK"
+      },
+      {
+        "name": "TOMAKOMAI",
+        "name_cn": "苫小牧",
+        "code": "JPTMK"
+      },
+      {
+        "name": "TOYAMA",
+        "name_cn": "富山",
+        "code": "JPTYA"
+      },
+      {
+        "name": "TSURUGA",
+        "name_cn": "敦贺",
+        "code": "JPTGA"
+      },
+      {
+        "name": "WAKAYAMA",
+        "name_cn": "和歌山",
+        "code": "JPWKA"
+      },
+      {
+        "name": "YOKKAICHI",
+        "name_cn": "四日市",
+        "code": "JPYCI"
+      }
+    ]
+  },
+  "Jordan": {
+    "name_cn": "约旦",
+    "ports": [
+      {
+        "name": "AQABA",
+        "name_cn": "阿卡巴",
+        "code": "JOAQJ"
+      }
+    ]
+  },
+  "Korea": {
+    "name_cn": "韩国",
+    "ports": [
+      {
+        "name": "BUSAN",
+        "name_cn": "釜山",
+        "code": "KRBUS"
+      },
+      {
+        "name": "INCHON",
+        "name_cn": "仁川",
+        "code": "KRINC"
+      },
+      {
+        "name": "SEOUL",
+        "name_cn": "汉城",
+        "code": "KRSEL"
+      },
+      {
+        "name": "ULSAN",
+        "name_cn": "蔚山",
+        "code": "KRULS"
+      }
+    ]
+  },
+  "Kuwait": {
+    "name_cn": "科威特",
+    "ports": [
+      {
+        "name": "KUWAIT",
+        "name_cn": "科威特",
+        "code": "KWKUW"
+      }
+    ]
+  },
+  "Lebanon": {
+    "name_cn": "黎巴嫩",
+    "ports": [
+      {
+        "name": "BEIRUT",
+        "name_cn": "贝鲁特",
+        "code": "LBBRT"
+      }
+    ]
+  },
+  "Malasia": {
+    "name_cn": "马来西亚",
+    "ports": [
+      {
+        "name": "BINTULU",
+        "name_cn": "民都鲁",
+        "code": "MYBTU"
+      },
+      {
+        "name": "KOTA KINABALU",
+        "name_cn": "亚庇",
+        "code": "MYBKI"
+      },
+      {
+        "name": "KUANTAN",
+        "name_cn": "关丹",
+        "code": "MYKUA"
+      },
+      {
+        "name": "KUCHING",
+        "name_cn": "古晋",
+        "code": "MYKCH"
+      },
+      {
+        "name": "LABUAN",
+        "name_cn": "纳闽",
+        "code": "MYLBH"
+      },
+      {
+        "name": "MIRI",
+        "name_cn": "米里",
+        "code": "MYMYY"
+      },
+      {
+        "name": "PENANG",
+        "name_cn": "槟城",
+        "code": "MYPEN"
+      },
+      {
+        "name": "PORT KELANG",
+        "name_cn": "巴生港",
+        "code": "MYPKG"
+      },
+      {
+        "name": "SANDAKAN",
+        "name_cn": "山打根",
+        "code": "MYSAN"
+      },
+      {
+        "name": "SIBU",
+        "name_cn": "诗巫",
+        "code": "MYSBW"
+      },
+      {
+        "name": "TAWAU",
+        "name_cn": "斗湖",
+        "code": "MYTAW"
+      }
+    ]
+  },
+  "Malaysia": {
+    "name_cn": "马来西亚",
+    "ports": [
+      {
+        "name": "PASIR GUDANG",
+        "name_cn": "巴西古丹",
+        "code": "MYPAG"
+      }
+    ]
+  },
+  "Morocco": {
+    "name_cn": "摩洛哥",
+    "ports": [
+      {
+        "name": "CASABLANCA",
+        "name_cn": "卡萨布兰加",
+        "code": "MACAS"
+      },
+      {
+        "name": "MELILLA",
+        "name_cn": "美利利亚",
+        "code": "MEMEL"
+      },
+      {
+        "name": "RABAT",
+        "name_cn": "拉巴特",
+        "code": "MARBT"
+      },
+      {
+        "name": "TANGIER",
+        "name_cn": "丹吉尔",
+        "code": "MATAN"
+      }
+    ]
+  },
+  "Netherlands": {
+    "name_cn": "荷兰",
+    "ports": [
+      {
+        "name": "AMSTERDAM",
+        "name_cn": "阿姆斯特丹",
+        "code": "NLAMS"
+      },
+      {
+        "name": "FLUSHING",
+        "name_cn": "符拉辛",
+        "code": "NLFLU"
+      },
+      {
+        "name": "ROTTERDAM",
+        "name_cn": "鹿特丹",
+        "code": "NLRTM"
+      }
+    ]
+  },
+  "Nigeria": {
+    "name_cn": "尼日利亚",
+    "ports": [
+      {
+        "name": "APAPA",
+        "name_cn": "阿帕帕",
+        "code": "NGAPA"
+      },
+      {
+        "name": "LAGOS",
+        "name_cn": "拉各斯",
+        "code": "NGLAG"
+      },
+      {
+        "name": "PORT HARCOURT",
+        "name_cn": "哈科特港",
+        "code": "NGPHA"
+      }
+    ]
+  },
+  "Norway": {
+    "name_cn": "挪威",
+    "ports": [
+      {
+        "name": "AALESUNND",
+        "name_cn": "奥勒松",
+        "code": "NOAAL"
+      },
+      {
+        "name": "BERGEN",
+        "name_cn": "卑尔根",
+        "code": "NOBGN"
+      },
+      {
+        "name": "FREDRISKSTAD",
+        "name_cn": "非特烈斯塔",
+        "code": "NOFIE"
+      },
+      {
+        "name": "HALDEN",
+        "name_cn": "哈尔登",
+        "code": "NOHAL"
+      },
+      {
+        "name": "HAUGESUND",
+        "name_cn": "海尔格松",
+        "code": "NOHAU"
+      },
+      {
+        "name": "KRISTAINSAND.N",
+        "name_cn": "克里斯蒂安桑北",
+        "code": "NOKRN"
+      },
+      {
+        "name": "KRISTAINSAND.S",
+        "name_cn": "克里斯蒂安桑南",
+        "code": "NOKRS"
+      },
+      {
+        "name": "MOSS",
+        "name_cn": "莫斯",
+        "code": "NOMOS"
+      },
+      {
+        "name": "OSLO",
+        "name_cn": "奥斯陆",
+        "code": "NOOSL"
+      },
+      {
+        "name": "SANDNES",
+        "name_cn": "桑内斯",
+        "code": "NOSNS"
+      },
+      {
+        "name": "STAVANGER",
+        "name_cn": "斯塔万格",
+        "code": "NOSTA"
+      },
+      {
+        "name": "THAMSHAMN",
+        "name_cn": "塔姆港",
+        "code": "NOTHA"
+      }
+    ]
+  },
+  "Pakistan": {
+    "name_cn": "巴基斯坦",
+    "ports": [
+      {
+        "name": "KARACHI",
+        "name_cn": "卡拉奇",
+        "code": "PKKHI"
+      }
+    ]
+  },
+  "Philippine": {
+    "name_cn": "菲律宾",
+    "ports": [
+      {
+        "name": "CAGAYAN DE ORO",
+        "name_cn": "卡加延德奥罗",
+        "code": "PHCDO"
+      },
+      {
+        "name": "CEBU",
+        "name_cn": "宿雾",
+        "code": "PHCEB"
+      },
+      {
+        "name": "GENERAL SANTOS",
+        "name_cn": "桑托斯",
+        "code": "PHGSA"
+      },
+      {
+        "name": "MANILA",
+        "name_cn": "马尼拉",
+        "code": "PHMAN"
+      }
+    ]
+  },
+  "Roumania": {
+    "name_cn": "罗马尼亚",
+    "ports": [
+      {
+        "name": "CONSTANTZA",
+        "name_cn": "康斯坦察",
+        "code": "ROCON"
+      }
+    ]
+  },
+  "Russia": {
+    "name_cn": "俄罗斯",
+    "ports": [
+      {
+        "name": "NAKHODKA",
+        "name_cn": "纳霍德卡",
+        "code": "RUNAK"
+      }
+    ]
+  },
+  "Saudi Arabia": {
+    "name_cn": "沙特阿拉伯",
+    "ports": [
+      {
+        "name": "DAMMAN",
+        "name_cn": "达曼",
+        "code": "SADMN"
+      },
+      {
+        "name": "JEDDAH",
+        "name_cn": "吉达",
+        "code": "SAJED"
+      },
+      {
+        "name": "RIYADH",
+        "name_cn": "利亚德",
+        "code": "SARUH"
+      }
+    ]
+  },
+  "Senegal": {
+    "name_cn": "塞内加尔",
+    "ports": [
+      {
+        "name": "DAKAR",
+        "name_cn": "达卡",
+        "code": "SNDKR"
+      }
+    ]
+  },
+  "Slovenia": {
+    "name_cn": "斯洛文尼亚",
+    "ports": [
+      {
+        "name": "KOPER",
+        "name_cn": "科佩尔",
+        "code": "SIKOP"
+      }
+    ]
+  },
+  "South Africa": {
+    "name_cn": "南非",
+    "ports": [
+      {
+        "name": "CAPE TOWN",
+        "name_cn": "开普顿",
+        "code": "ZACPT"
+      },
+      {
+        "name": "DURBAN",
+        "name_cn": "德班",
+        "code": "ZADUR"
+      },
+      {
+        "name": "EAST LONDON",
+        "name_cn": "东伦敦",
+        "code": "ZAELN"
+      },
+      {
+        "name": "PORT ELIZABETH",
+        "name_cn": "伊丽莎白港",
+        "code": "ZAPEL"
+      }
+    ]
+  },
+  "Spain": {
+    "name_cn": "西班牙",
+    "ports": [
+      {
+        "name": "ALGECIRAS",
+        "name_cn": "阿尔赫西拉斯",
+        "code": "ESALG"
+      },
+      {
+        "name": "BARCELONA",
+        "name_cn": "巴塞罗那",
+        "code": "ESBCN"
+      },
+      {
+        "name": "BILBAO",
+        "name_cn": "毕尔巴鄂",
+        "code": "ESBIL"
+      },
+      {
+        "name": "CASTELLON",
+        "name_cn": "卡斯特利翁",
+        "code": "ESCAS"
+      },
+      {
+        "name": "CEUTA",
+        "name_cn": "休达",
+        "code": "CACEU"
+      },
+      {
+        "name": "IBIZA",
+        "name_cn": "伊维萨",
+        "code": "ESIBI"
+      },
+      {
+        "name": "MALAGA",
+        "name_cn": "马拉加",
+        "code": "ESMAL"
+      },
+      {
+        "name": "VALENCIA",
+        "name_cn": "瓦伦西亚",
+        "code": "ESVLC"
+      },
+      {
+        "name": "VIGO",
+        "name_cn": "维哥",
+        "code": "ESVIG"
+      }
+    ]
+  },
+  "Sri Lana": {
+    "name_cn": "斯里兰卡",
+    "ports": [
+      {
+        "name": "COLOMBO",
+        "name_cn": "科伦坡",
+        "code": "LKCMB"
+      }
+    ]
+  },
+  "Sweden": {
+    "name_cn": "瑞典",
+    "ports": [
+      {
+        "name": "GOTHENBURG",
+        "name_cn": "歌德堡",
+        "code": "SEGOT"
+      },
+      {
+        "name": "HALMSTAD",
+        "name_cn": "哈尔姆斯塔德",
+        "code": "SEHSD"
+      },
+      {
+        "name": "HELSINGBORG",
+        "name_cn": "赫尔辛堡",
+        "code": "SEHEL"
+      },
+      {
+        "name": "MALMO",
+        "name_cn": "马尔默",
+        "code": "SEMAL"
+      },
+      {
+        "name": "NORRKOKING",
+        "name_cn": "诺尔雪平",
+        "code": "SENOR"
+      },
+      {
+        "name": "STOCKHOLM",
+        "name_cn": "斯德哥尔摩",
+        "code": "SESTO"
+      }
+    ]
+  },
+  "Syria": {
+    "name_cn": "叙利亚",
+    "ports": [
+      {
+        "name": "LATTAKIA",
+        "name_cn": "拉塔克",
+        "code": "SYLTK"
+      },
+      {
+        "name": "TARTOUS",
+        "name_cn": "塔尔图斯",
+        "code": "SYTTS"
+      }
+    ]
+  },
+  "Thailand": {
+    "name_cn": "泰国",
+    "ports": [
+      {
+        "name": "BANGKOK",
+        "name_cn": "曼谷",
+        "code": "THBKK"
+      },
+      {
+        "name": "LAEM CHABANG",
+        "name_cn": "南加邦",
+        "code": "THLZP"
+      },
+      {
+        "name": "SONGKHLA",
+        "name_cn": "宋卡",
+        "code": "THSON"
+      }
+    ]
+  },
+  "Togo": {
+    "name_cn": "多哥",
+    "ports": [
+      {
+        "name": "LOME",
+        "name_cn": "洛美",
+        "code": "TGLOM"
+      }
+    ]
+  },
+  "Turkey": {
+    "name_cn": "土耳其",
+    "ports": [
+      {
+        "name": "GEBZE",
+        "name_cn": "吉贝兹",
+        "code": "TRGEB"
+      },
+      {
+        "name": "GEMLIK",
+        "name_cn": "盖姆利克",
+        "code": "TRGEM"
+      },
+      {
+        "name": "ISTANBUL",
+        "name_cn": "伊斯坦堡",
+        "code": "TRIST"
+      },
+      {
+        "name": "IZMIR",
+        "name_cn": "伊士麦",
+        "code": "TRIZM"
+      },
+      {
+        "name": "MERSIN",
+        "name_cn": "美信",
+        "code": "TRMER"
+      }
+    ]
+  },
+  "U.S.A.": {
+    "name_cn": "美国",
+    "ports": [
+      {
+        "name": "BALTIMORE",
+        "name_cn": "巴的摩尔",
+        "code": "USBAL"
+      },
+      {
+        "name": "BOSTON",
+        "name_cn": "波士顿",
+        "code": "USBOS"
+      },
+      {
+        "name": "CHARLESTON",
+        "name_cn": "查里斯敦",
+        "code": "USCHS"
+      },
+      {
+        "name": "HOUSTON",
+        "name_cn": "休斯顿",
+        "code": "USHOU"
+      },
+      {
+        "name": "JACKSONVILLE",
+        "name_cn": "杰克逊维尔",
+        "code": "USJAC"
+      },
+      {
+        "name": "LONG BEACH",
+        "name_cn": "长堤",
+        "code": "USLGB"
+      },
+      {
+        "name": "LONGVIEW",
+        "name_cn": "朗维尤",
+        "code": "USLON"
+      },
+      {
+        "name": "LOS ANGELES",
+        "name_cn": "洛杉矶",
+        "code": "USLAX"
+      },
+      {
+        "name": "MIAMI",
+        "name_cn": "迈阿密",
+        "code": "USMIA"
+      },
+      {
+        "name": "NEW ORLEANS",
+        "name_cn": "纽奥良",
+        "code": "USNEW"
+      },
+      {
+        "name": "NEW YORK",
+        "name_cn": "纽约",
+        "code": "USNYC"
+      },
+      {
+        "name": "NORFOLK",
+        "name_cn": "诺福克",
+        "code": "USORF"
+      },
+      {
+        "name": "OAKLAND",
+        "name_cn": "奥克兰",
+        "code": "USOAK"
+      },
+      {
+        "name": "PHILADELPHIA",
+        "name_cn": "费城",
+        "code": "USPHL"
+      },
+      {
+        "name": "PORTLAND",
+        "name_cn": "波特兰",
+        "code": "USPDX"
+      },
+      {
+        "name": "SAN FRANCISCO",
+        "name_cn": "旧金山",
+        "code": "USSFO"
+      },
+      {
+        "name": "SAVANNAH",
+        "name_cn": "沙瓦那",
+        "code": "USSAV"
+      },
+      {
+        "name": "SEATTLE",
+        "name_cn": "西雅图",
+        "code": "USSEA"
+      },
+      {
+        "name": "TACOMA",
+        "name_cn": "塔科马",
+        "code": "USTAC"
+      }
+    ]
+  },
+  "Ukraine": {
+    "name_cn": "乌克兰",
+    "ports": [
+      {
+        "name": "ODESSA",
+        "name_cn": "敖德萨",
+        "code": "UAODE"
+      }
+    ]
+  },
+  "United Kingdom": {
+    "name_cn": "英国",
+    "ports": [
+      {
+        "name": "BELFAST",
+        "name_cn": "贝尔法斯特",
+        "code": "GBBEL"
+      },
+      {
+        "name": "BRISTOL",
+        "name_cn": "布里斯托尔",
+        "code": "GBBTL"
+      },
+      {
+        "name": "CARDIFF",
+        "name_cn": "加的夫",
+        "code": "GBCDF"
+      },
+      {
+        "name": "COLCHESTER",
+        "name_cn": "科尔切斯特",
+        "code": "GBCOL"
+      },
+      {
+        "name": "DUNDEE",
+        "name_cn": "邓迪",
+        "code": "GBDEE"
+      },
+      {
+        "name": "EDINBURGH",
+        "name_cn": "爱丁堡",
+        "code": "GBEDI"
+      },
+      {
+        "name": "FELIXSTOWE",
+        "name_cn": "佛列斯多",
+        "code": "GBFXT"
+      },
+      {
+        "name": "GLASGOW",
+        "name_cn": "格拉斯哥",
+        "code": "GBGLA"
+      },
+      {
+        "name": "HULL",
+        "name_cn": "赫尔",
+        "code": "GBHUL"
+      },
+      {
+        "name": "IMMINGHAM",
+        "name_cn": "伊明赫姆",
+        "code": "GBIMM"
+      },
+      {
+        "name": "LIVERPOOL",
+        "name_cn": "利物浦",
+        "code": "GBLIV"
+      },
+      {
+        "name": "LONDON",
+        "name_cn": "伦敦",
+        "code": "GBLIV"
+      },
+      {
+        "name": "MANCHESTER",
+        "name_cn": "曼彻斯特",
+        "code": "GBMNC"
+      },
+      {
+        "name": "MIDDLESBOROUGH",
+        "name_cn": "米德尔斯伯勒",
+        "code": "GBMID"
+      },
+      {
+        "name": "NEWCASTLE",
+        "name_cn": "纽卡斯尔",
+        "code": "GBNCE"
+      },
+      {
+        "name": "NORWICH",
+        "name_cn": "诺里奇",
+        "code": "GBNOR"
+      },
+      {
+        "name": "PLYMOUTH",
+        "name_cn": "普利茅斯",
+        "code": "GBPLY"
+      },
+      {
+        "name": "SOUTHAMPTON",
+        "name_cn": "南安普顿",
+        "code": "GBSOU"
+      }
+    ]
+  },
+  "Vietnam": {
+    "name_cn": "越南",
+    "ports": [
+      {
+        "name": "HAIPHONG",
+        "name_cn": "海防",
+        "code": "VNHPH"
+      },
+      {
+        "name": "HOCHIMINH CITY",
+        "name_cn": "胡志明",
+        "code": "VNHCM"
+      }
+    ]
+  }
+}

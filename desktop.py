@@ -48,6 +48,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(403,{"error":"请通过本机工作台地址打开。"})
         path=unquote(urlsplit(self.path).path)
         if path=="/api/state":return self.respond(200,self.session.state())
+        if path=="/api/ports":
+            from market import port_catalogue
+            try:
+                ports=port_catalogue()
+            except (OSError, ValueError, RuntimeError):
+                return self.respond(503,{"error":"无法读取本机目的港目录，请检查工作台是否已完整解压。"})
+            return self.respond(200,ports)
         if path=="/favicon.ico":return self.send_body(204,b"","image/x-icon")
         resource=(UI/(path.lstrip("/") or "index.html")).resolve()
         if not resource.is_relative_to(UI) or not resource.is_file():

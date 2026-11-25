@@ -7,7 +7,7 @@ import sys
 from secrets import token_hex
 
 from live_platform import DEFAULT_SCHOOL_URL, LivePlatform, ROLES, archive_origins
-from market import PRODUCTS
+from market import PRODUCTS, PortSelectionError
 from pipeline import read, write, store_new, advance, run_lock
 from planning import rotation, new_job
 from results import summarize
@@ -150,9 +150,9 @@ def new_round(platform,ids,data,ask):
         product=product_ids[(offset+i)%len(product_ids)]
         print("正在读取当期货价、关税、目的港和角色余额……",flush=True)
         try:j=new_job(platform,ids,roles,product,carton,floor,**options)
-        except ValueError as exc:
-            if "英文目的港" not in str(exc):raise
-            j=new_job(platform,ids,roles,product,carton,floor,input(str(exc)+"：").strip(),**options)
+        except PortSelectionError as exc:
+            print(exc)
+            j=new_job(platform,ids,roles,product,carton,floor,input("输入本笔英文目的港：").strip(),**options)
         preview(j);quotes.append(j)
     notify=input("每单结案后，自动给本单进口商发送一封结款确认函？[y/N]：").strip().lower()=="y"
     if input(f"以上 {n} 笔将正式签约、采购、收付并结案。输入 开始 执行：").strip()!="开始":return
@@ -242,11 +242,13 @@ def main():
     parser.add_argument("--self-check",action="store_true",help="离线验证打包依赖及本地模型接管流程")
     args=parser.parse_args()
     if args.self_check:
+        from market import port_catalogue
         from try_handoff import DraftExampleHost,scripted_answer
         from handoff import recover
         from settlement import settle_trade
         from foreign_trade import foreign_ship
         if recover(DraftExampleHost(),scripted_answer)[0]!="resume_rules":raise RuntimeError("接管自检失败")
+        if not port_catalogue():raise RuntimeError("目的港目录为空")
         print("工作台自检通过。");return
     data=(args.data or default_data()).resolve()
     print("SIMtrade 实训工作台\n支持 1–3 个学生账号 · 常规交易使用本地规则 · 0 退出")

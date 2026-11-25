@@ -5,6 +5,10 @@
 !/使用说明.md
 !/实测记录.md
 !/*.py
+!/port_catalogue.json
+!/tests/
+/tests/*
+!/tests/test_ports.py
 !/ui/
 !/docs/
 /docs/*
